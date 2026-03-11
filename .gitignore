@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+*.egg-info/
+dist/
+build/
+.ruff_cache/
+workspace/*/
+!workspace/.gitkeep
+blackboard/ideas/*/
+!blackboard/ideas/_template/
+.worktrees/

@@ -209,6 +209,9 @@ async def idea_detail(request: Request, idea_id: str):
     is_running = status.get("running", False)
     stop_requested = status.get("stop_requested", False)
 
+    pipeline = bb.get_pipeline(idea_id)
+    registered_roles = _get_registered_roles()
+
     return templates.TemplateResponse(
         "idea_detail.html",
         {
@@ -220,6 +223,8 @@ async def idea_detail(request: Request, idea_id: str):
             "release_count": release_count,
             "is_running": is_running,
             "stop_requested": stop_requested,
+            "pipeline": pipeline,
+            "registered_roles": sorted(registered_roles),
         },
     )
 
@@ -235,18 +240,7 @@ async def idea_action(
     settings = get_settings()
     bb = _get_blackboard()
 
-    if action == "incubate":
-        async def _run():
-            from incubator.orchestrator.orchestrator import Orchestrator
-            orch = Orchestrator(settings)
-            await orch.run_continuous_for_idea(idea_id)
-
-        asyncio.create_task(_run())
-    elif action == "request_stop":
-        from incubator.orchestrator.orchestrator import Orchestrator
-        orch = Orchestrator(settings)
-        orch.request_stop(idea_id)
-    elif action == "kill":
+    if action == "kill":
         from incubator.orchestrator.orchestrator import Orchestrator
         orch = Orchestrator(settings)
         await orch.kill(idea_id)
@@ -286,6 +280,40 @@ async def idea_action(
                 f"\n\n---\n\n## Additional Context (Resurrected)\n\n{resurrect_context.strip()}\n",
             )
 
+    return RedirectResponse(url=f"/ideas/{idea_id}", status_code=303)
+
+
+@router.post("/ideas/{idea_id}/pipeline")
+async def update_pipeline(
+    idea_id: str,
+    stages: str = Form(""),
+    post_ready: str = Form(""),
+    gating_default: str = Form("auto"),
+    gating_overrides: str = Form("{}"),
+):
+    bb = _get_blackboard()
+    stage_list = [s.strip() for s in stages.split(",") if s.strip()]
+    post_ready_list = [s.strip() for s in post_ready.split(",") if s.strip()]
+
+    # Validate stage names against registry and known pipeline stage names
+    registered = _get_registered_roles()
+    # Also accept short names used in presets (e.g. "competitive" vs "competitive-watcher")
+    pipeline_known = {"ideation", "implementation", "validation", "release", "competitive", "research"}
+    allowed = registered | pipeline_known
+    stage_list = [s for s in stage_list if s in allowed]
+    post_ready_list = [s for s in post_ready_list if s in allowed]
+
+    try:
+        overrides = json.loads(gating_overrides) if gating_overrides.strip() else {}
+    except json.JSONDecodeError:
+        overrides = {}
+
+    pipeline = {
+        "stages": stage_list,
+        "post_ready": post_ready_list,
+        "gating": {"default": gating_default, "overrides": overrides},
+    }
+    bb.set_pipeline(idea_id, pipeline)
     return RedirectResponse(url=f"/ideas/{idea_id}", status_code=303)
 
 

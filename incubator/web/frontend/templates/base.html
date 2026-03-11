@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}incubator{% endblock %}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;1,9..40,300&family=DM+Mono:wght@300;400&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['"DM Sans"', 'system-ui', 'sans-serif'],
+                        mono: ['"DM Mono"', 'monospace'],
+                    },
+                }
+            }
+        }
+    </script>
+    <style>
+        body { background: #faf9f6; color: #3b3530; }
+
+        /* ── Cards ── */
+        .card {
+            background: white;
+            border: 1px solid #eae6df;
+            border-radius: 16px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.02);
+            transition: box-shadow 0.25s ease, border-color 0.25s ease;
+        }
+        .card:hover { box-shadow: 0 4px 20px rgba(0,0,0,0.05); border-color: #ddd6ca; }
+        .card-flat { background: #f7f5f0; border: 1px solid #eae6df; border-radius: 14px; }
+
+        /* ── Badges ── */
+        .badge {
+            display: inline-flex; align-items: center; gap: 5px;
+            font-size: 0.66rem; padding: 2px 9px; border-radius: 20px;
+            font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase;
+        }
+        .badge-submitted  { background: #f1efe9; color: #998c74; }
+        .badge-ideation   { background: #eee8f6; color: #7b5ea8; }
+        .badge-implementation { background: #e3edf7; color: #4a7aaa; }
+        .badge-validation { background: #fce8e1; color: #b85f3e; }
+        .badge-release    { background: #e3ede3; color: #4e834e; }
+        .badge-released   { background: #c8dcc8; color: #2c5e2c; }
+        .badge-killed     { background: #f3e3e3; color: #944; }
+        .badge-paused     { background: #eae6df; color: #7a6e58; }
+        .badge-ideation_review   { background: #eee8f6; color: #7b5ea8; }
+        .badge-implementation_review { background: #e3edf7; color: #4a7aaa; }
+        .badge-validation_review { background: #fce8e1; color: #b85f3e; }
+
+        /* ── Markdown / Prose ── */
+        .prose { font-size: 0.88rem; line-height: 1.75; color: #544d43; }
+        .prose h1 { font-size: 1.1rem; font-weight: 500; margin: 1.2rem 0 0.5rem; color: #3b3530; }
+        .prose h2 { font-size: 1rem; font-weight: 500; margin: 1rem 0 0.4rem; color: #3b3530; border-bottom: 1px solid #eae6df; padding-bottom: 0.3rem; }
+        .prose h3 { font-size: 0.92rem; font-weight: 500; margin: 0.8rem 0 0.3rem; color: #544d43; }
+        .prose p { margin: 0.4rem 0; }
+        .prose ul, .prose ol { margin: 0.4rem 0; padding-left: 1.5rem; }
+        .prose li { margin: 0.15rem 0; }
+        .prose li::marker { color: #bdb4a4; }
+        .prose code { font-family: 'DM Mono', monospace; font-size: 0.82em; background: #f2efe8; padding: 1px 5px; border-radius: 4px; color: #6d6354; }
+        .prose pre { background: #f7f5f0; border: 1px solid #eae6df; border-radius: 10px; padding: 0.9rem; overflow-x: auto; margin: 0.6rem 0; }
+        .prose pre code { background: none; padding: 0; font-size: 0.8rem; }
+        .prose table { border-collapse: collapse; width: 100%; margin: 0.6rem 0; font-size: 0.84rem; }
+        .prose th { background: #f2efe8; padding: 6px 12px; text-align: left; font-weight: 500; border-bottom: 2px solid #eae6df; color: #3b3530; }
+        .prose td { padding: 6px 12px; border-bottom: 1px solid #f2efe8; }
+        .prose strong { font-weight: 500; color: #3b3530; }
+        .prose a { color: #5e94bb; text-decoration: underline; text-decoration-color: #c5d8e8; text-underline-offset: 2px; }
+        .prose hr { border: none; border-top: 1px solid #eae6df; margin: 1.25rem 0; }
+
+        /* ── Collapsible ── */
+        details summary { cursor: pointer; user-select: none; list-style: none; }
+        details summary::-webkit-details-marker { display: none; }
+        details[open] summary .chevron { transform: rotate(90deg); }
+        .chevron { transition: transform 0.2s ease; display: inline-block; font-size: 0.65rem; color: #bdb4a4; }
+
+        /* ── Agent rings ── */
+        .agent-ring {
+            width: 40px; height: 40px; border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 1.05rem; flex-shrink: 0;
+        }
+        .agent-ring.idle      { background: #f2efe8; border: 2px solid #e2ded4; }
+        .agent-ring.running   { background: #eee8f6; border: 2px solid #a690cc; animation: breathe 2.5s ease-in-out infinite; }
+        .agent-ring.done      { background: #e3ede3; border: 2px solid #82b582; }
+        .agent-ring.error     { background: #f3e3e3; border: 2px solid #c88; }
+        .agent-ring.waiting   { background: #fce8e1; border: 2px solid #dda088; animation: breathe 3s ease-in-out infinite; }
+        @keyframes breathe {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(166,144,204,0.15); }
+            50% { box-shadow: 0 0 0 8px rgba(166,144,204,0); }
+        }
+
+        /* ── Activity feed ── */
+        .feed-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; margin-top: 6px; }
+        .feed-dot.agent_start { background: #a690cc; }
+        .feed-dot.agent_done  { background: #82b582; }
+        .feed-dot.waiting     { background: #dda088; animation: breathe-dot 2s ease-in-out infinite; }
+        .feed-dot.decision    { background: #5e94bb; }
+        .feed-dot.error       { background: #c66; }
+        .feed-dot.info        { background: #bdb4a4; }
+        .feed-dot.phase_transition { background: #a690cc; }
+        @keyframes breathe-dot {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.35; }
+        }
+
+        /* ── Buttons ── */
+        .btn {
+            display: inline-flex; align-items: center; gap: 6px;
+            padding: 7px 16px; border-radius: 10px;
+            font-size: 0.82rem; font-weight: 500;
+            transition: all 0.15s ease; cursor: pointer; border: none;
+        }
+        .btn-primary { background: #3b3530; color: #faf9f6; }
+        .btn-primary:hover { background: #2a2420; }
+        .btn-soft { background: #f2efe8; color: #544d43; border: 1px solid #e2ded4; }
+        .btn-soft:hover { background: #eae6df; }
+        .btn-danger { background: #f3e3e3; color: #944; border: 1px solid #e8cece; }
+        .btn-danger:hover { background: #ecd5d5; }
+
+        /* ── Forms ── */
+        input, textarea {
+            font-family: 'DM Sans', system-ui, sans-serif;
+        }
+        input:focus, textarea:focus {
+            outline: none;
+            border-color: #bdb4a4;
+            box-shadow: 0 0 0 3px rgba(189,180,164,0.12);
+        }
+
+        /* ── Utilities ── */
+        .line-clamp-2 {
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+        .nav-link {
+            padding: 6px 0;
+            border-bottom: 2px solid transparent;
+            transition: color 0.15s, border-color 0.15s;
+        }
+        .nav-link:hover { color: #3b3530; }
+        .nav-link.active { color: #3b3530; border-bottom-color: #3b3530; }
+    </style>
+</head>
+<body class="min-h-screen font-sans antialiased">
+    <nav class="sticky top-0 z-50 bg-[#faf9f6]/80 backdrop-blur-xl border-b border-[#eae6df]/60">
+        <div class="max-w-4xl mx-auto px-6 h-14 flex items-center gap-8">
+            <a href="/" class="flex items-center gap-2 group">
+                <span class="text-base opacity-70 group-hover:opacity-100 transition-opacity">&#x1f331;</span>
+                <span class="text-[0.88rem] font-medium tracking-tight text-[#3b3530]">incubator</span>
+            </a>
+            <div class="flex items-center gap-5 text-[0.78rem] text-[#8a8074]">
+                <a href="/" class="nav-link{% if request.url.path == '/' %} active{% endif %}">Ideas</a>
+                <a href="/activity" class="nav-link{% if '/activity' in request.url.path %} active{% endif %}">Activity</a>
+                <a href="/pool" class="nav-link{% if '/pool' in request.url.path %} active{% endif %}">Pool</a>
+                <a href="/agents" class="nav-link{% if '/agents' in request.url.path %} active{% endif %}">Agents</a>
+                <a href="/costs" class="nav-link{% if '/costs' in request.url.path %} active{% endif %}">Costs</a>
+                <a href="/evolution" class="nav-link{% if '/evolution' in request.url.path %} active{% endif %}">Evolution</a>
+            </div>
+            <div class="ml-auto">
+                <a href="/ideas/new" class="btn btn-primary text-[0.76rem] py-1.5 px-3.5">
+                    + New Idea
+                </a>
+            </div>
+        </div>
+    </nav>
+
+    <main class="max-w-4xl mx-auto px-6 py-8">
+        {% block content %}{% endblock %}
+    </main>
+
+    <div id="activity-feed-global" class="hidden"></div>
+    <script src="/static/app.js"></script>
+</body>
+</html>

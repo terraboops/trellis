@@ -14,3 +14,15 @@ blackboard/ideas/*/
 .claude/settings.local.json
 .superpowers/
 blackboard/.activity.json
+
+# Dev project directory
+dev-project/
+
+# Agent session data (generated at runtime)
+incubator/agents/*/.claude/projects/
+incubator/agents/*/.claude/backups/
+incubator/agents/*/.claude/shell-snapshots/
+incubator/agents/*/.claude/.claude.json
+incubator/agents/*/.claude/mcp-needs-auth-cache.json
+incubator/agents/*/.claude/settings.json
+incubator/agents/*/.claude/plugins/

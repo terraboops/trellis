@@ -15,12 +15,10 @@ from fastapi.templating import Jinja2Templates
 from incubator.config import get_settings
 from incubator.core.blackboard import Blackboard
 from incubator.core.registry import load_registry
+from incubator.web.api.paths import TEMPLATES_DIR
 
 router = APIRouter()
-_templates_dir = str(
-    get_settings().project_root / "incubator" / "web" / "frontend" / "templates"
-)
-templates = Jinja2Templates(directory=_templates_dir)
+templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
 # Register markdown filter for Jinja2
 _md = markdown.Markdown(extensions=["tables", "fenced_code", "nl2br", "toc"])

@@ -82,15 +82,15 @@ class BaseAgent(ABC):
 
     def get_knowledge_dir(self) -> Path:
         """Return the knowledge directory for this agent type."""
-        return self.project_root / "incubator" / "agents" / (self.config.phase or self.config.name) / "knowledge"
+        return self.project_root / "agents" / (self.config.phase or self.config.name) / "knowledge"
 
     def get_subagents(self) -> dict[str, AgentDefinition]:
         """Override to define subagents for this agent."""
         return {}
 
     def get_working_dir(self, idea_id: str) -> str:
-        """Return the working directory for this agent run."""
-        return str(self.project_root)
+        """Return agent dir so .claude/ sessions land in the project."""
+        return str(self.project_root / "agents" / self.config.name)
 
     def _build_deadline_context(self, deadline: datetime) -> str:
         """Build deadline awareness context for the system prompt."""

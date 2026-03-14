@@ -11,11 +11,10 @@ from fastapi.templating import Jinja2Templates
 from incubator.config import get_settings
 from incubator.core.blackboard import Blackboard
 from incubator.core.registry import AgentConfig, load_registry
+from incubator.web.api.paths import TEMPLATES_DIR
 
 router = APIRouter()
-templates = Jinja2Templates(
-    directory=str(get_settings().project_root / "incubator" / "web" / "frontend" / "templates")
-)
+templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
 # Register shared filters
 _CADENCE_PATTERNS = {
@@ -37,7 +36,7 @@ PERMISSION_MODES = ["bypassPermissions", "acceptEdits", "default", "plan", "dont
 def _agent_view_data(agent: AgentConfig, settings) -> dict:
     data = vars(agent).copy()
     knowledge_dir = (
-        settings.project_root / "incubator" / "agents"
+        settings.project_root / "agents"
         / (agent.phase or agent.name) / "knowledge"
     )
     learnings_path = knowledge_dir / "learnings.md"
@@ -156,7 +155,7 @@ async def create_agent(
         return RedirectResponse(url=f"/agents/{slug}", status_code=303)
 
     config = AgentConfig(name=slug, description=description)
-    config.claude_home = f"incubator/agents/{slug}/.claude"
+    config.claude_home = f"agents/{slug}/.claude"
 
     _apply_form_to_config(
         config, description=description, model=model, max_turns=max_turns,

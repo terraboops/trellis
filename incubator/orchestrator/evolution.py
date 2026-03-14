@@ -20,7 +20,7 @@ class EvolutionManager:
     ) -> None:
         self.project_root = project_root
         self.dispatcher = dispatcher
-        self.agents_dir = project_root / "incubator" / "agents"
+        self.agents_dir = project_root / "agents"
 
     async def run_retrospective(self) -> None:
         """Analyze accumulated knowledge and propose improvements."""

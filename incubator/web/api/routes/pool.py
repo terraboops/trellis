@@ -10,12 +10,11 @@ from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
 from incubator.config import get_settings
+from incubator.web.api.paths import TEMPLATES_DIR
 
 router = APIRouter()
 settings = get_settings()
-templates = Jinja2Templates(
-    directory=str(settings.project_root / "incubator" / "web" / "frontend" / "templates")
-)
+templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
 STARVATION_THRESHOLD = 0.5
 DEADLINE_WARNING_THRESHOLD = 2

@@ -8,12 +8,10 @@ from fastapi.templating import Jinja2Templates
 
 from incubator.config import get_settings
 from incubator.core.activity import ActivityTracker
+from incubator.web.api.paths import TEMPLATES_DIR
 
 router = APIRouter()
-_templates_dir = str(
-    get_settings().project_root / "incubator" / "web" / "frontend" / "templates"
-)
-templates = Jinja2Templates(directory=_templates_dir)
+templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
 
 def _get_tracker() -> ActivityTracker:

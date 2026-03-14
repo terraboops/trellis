@@ -8,11 +8,10 @@ from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
 from incubator.config import get_settings
+from incubator.web.api.paths import TEMPLATES_DIR
 
 router = APIRouter()
-templates = Jinja2Templates(
-    directory=str(get_settings().project_root / "incubator" / "web" / "frontend" / "templates")
-)
+templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
 _md = _markdown_lib.Markdown(extensions=["tables", "fenced_code", "nl2br", "toc"])
 
@@ -28,7 +27,7 @@ templates.env.filters["markdown"] = _render_md
 @router.get("/", response_class=HTMLResponse)
 async def evolution_view(request: Request):
     settings = get_settings()
-    agents_dir = settings.project_root / "incubator" / "agents"
+    agents_dir = settings.project_root / "agents"
 
     learnings = []
     for agent_dir in sorted(agents_dir.iterdir()):

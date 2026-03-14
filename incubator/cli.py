@@ -353,11 +353,16 @@ def upgrade(
     import shutil
     import sys
 
-    from incubator.config import Settings
+    from incubator.config import Settings, find_project_root
 
     settings = Settings()
     defaults_agents = settings.defaults_dir / "agents"
-    project_agents = settings.project_root / "agents"
+    try:
+        project_root = find_project_root()
+    except FileNotFoundError:
+        console.print("[red]Not an incubator project. Run 'incubator init' first.[/red]")
+        raise typer.Exit(1)
+    project_agents = project_root / "agents"
 
     if not project_agents.exists():
         console.print("[red]No agents/ directory. Is this an incubator project?[/red]")

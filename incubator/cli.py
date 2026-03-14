@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import os
+import signal
+import time
 
 import typer
 from rich.console import Console
@@ -243,14 +246,82 @@ def run() -> None:
         console.print("\n[yellow]Pool stopped.[/yellow]")
 
 
+def _start_daemon(settings, host, port, no_pool):
+    """Relaunch incubator serve in the background."""
+    import subprocess
+    import sys
+
+    pool_dir = settings.project_root / "pool"
+    pool_dir.mkdir(exist_ok=True)
+    log_path = pool_dir / "incubator.log"
+    pid_path = pool_dir / "incubator.pid"
+
+    cmd = [sys.executable, "-m", "incubator.cli", "serve"]
+    if host:
+        cmd += ["--host", host]
+    if port:
+        cmd += ["--port", str(port)]
+    if no_pool:
+        cmd.append("--no-pool")
+
+    log_file = open(log_path, "a")
+    proc = subprocess.Popen(cmd, stdout=log_file, stderr=log_file, start_new_session=True)
+    pid_path.write_text(str(proc.pid))
+    console.print(f"[green]Started incubator (PID {proc.pid})[/green]")
+    console.print(f"  Log: {log_path}")
+    console.print(f"  Stop: incubator serve --stop")
+
+
+def _stop_daemon(settings):
+    """Stop a backgrounded incubator serve."""
+    pid_path = settings.project_root / "pool" / "incubator.pid"
+    if not pid_path.exists():
+        console.print("[yellow]No PID file found. Is incubator running?[/yellow]")
+        raise typer.Exit(1)
+
+    pid = int(pid_path.read_text().strip())
+    try:
+        os.kill(pid, signal.SIGTERM)
+        console.print(f"Sent SIGTERM to PID {pid}, waiting...")
+    except OSError:
+        console.print(f"[yellow]Process {pid} not running. Cleaning up.[/yellow]")
+        pid_path.unlink(missing_ok=True)
+        return
+
+    for _ in range(10):
+        time.sleep(1)
+        try:
+            os.kill(pid, 0)
+        except OSError:
+            console.print("[green]Stopped.[/green]")
+            pid_path.unlink(missing_ok=True)
+            return
+
+    console.print("[yellow]Still running after 10s, sending SIGKILL...[/yellow]")
+    os.kill(pid, signal.SIGKILL)
+    pid_path.unlink(missing_ok=True)
+    console.print("[green]Killed.[/green]")
+
+
 @app.command()
 def serve(
     host: str = typer.Option(None, help="Host to bind to"),
     port: int = typer.Option(None, help="Port to bind to"),
     no_pool: bool = typer.Option(False, "--no-pool", help="Disable worker pool"),
+    background: bool = typer.Option(False, "--background", help="Run as background daemon"),
+    stop: bool = typer.Option(False, "--stop", help="Stop background daemon"),
 ) -> None:
     """Start the web dashboard (and worker pool by default)."""
     settings = get_settings()
+
+    if stop:
+        _stop_daemon(settings)
+        return
+
+    if background:
+        _start_daemon(settings, host, port, no_pool)
+        return
+
     import uvicorn
 
     if not no_pool:
@@ -264,6 +335,99 @@ def serve(
         factory=True,
         reload=False,
     )
+
+
+# --- Agent subcommands ---
+
+agent_app = typer.Typer(name="agent", help="Agent management commands")
+app.add_typer(agent_app)
+
+
+@agent_app.command()
+def upgrade(
+    all_: bool = typer.Option(False, "--all", help="Accept all changes without prompting"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show changes without applying"),
+) -> None:
+    """Update agent configs from the installed package version."""
+    import difflib
+    import shutil
+    import sys
+
+    from incubator.config import Settings
+
+    settings = Settings()
+    defaults_agents = settings.defaults_dir / "agents"
+    project_agents = settings.project_root / "agents"
+
+    if not project_agents.exists():
+        console.print("[red]No agents/ directory. Is this an incubator project?[/red]")
+        raise typer.Exit(1)
+
+    is_tty = sys.stdin.isatty() and not dry_run
+
+    # Updatable files (never touch knowledge/learnings.md or .claude/ sessions)
+    UPDATABLE = {"prompt.py", "CLAUDE.md"}
+
+    for default_agent in sorted(defaults_agents.iterdir()):
+        if not default_agent.is_dir():
+            continue
+        name = default_agent.name
+        project_agent = project_agents / name
+
+        if not project_agent.exists():
+            console.print(f"\n[cyan]New agent: {name}[/cyan]")
+            if dry_run:
+                console.print("  Would add (--dry-run)")
+                continue
+            if all_ or (is_tty and typer.confirm(f"  Add {name}?")):
+                shutil.copytree(default_agent, project_agent)
+                console.print(f"  [green]Added {name}[/green]")
+            continue
+
+        # Compare updatable files
+        for default_file in default_agent.rglob("*"):
+            if not default_file.is_file():
+                continue
+            rel = default_file.relative_to(default_agent)
+            # Skip non-updatable
+            if rel.name == "learnings.md":
+                continue
+            if ".claude" in rel.parts and rel.name != "CLAUDE.md":
+                continue
+            if rel.name not in UPDATABLE:
+                continue
+
+            project_file = project_agent / rel
+            if not project_file.exists():
+                continue
+
+            default_content = default_file.read_text()
+            project_content = project_file.read_text()
+            if default_content == project_content:
+                continue
+
+            diff = difflib.unified_diff(
+                project_content.splitlines(keepends=True),
+                default_content.splitlines(keepends=True),
+                fromfile=f"project/{name}/{rel}",
+                tofile=f"package/{name}/{rel}",
+            )
+            diff_text = "".join(diff)
+
+            console.print(f"\n[yellow]{name}/{rel}[/yellow] has changes:")
+            if dry_run:
+                console.print(diff_text)
+                continue
+            if all_:
+                project_file.write_text(default_content)
+                console.print(f"  [green]Updated[/green]")
+            elif is_tty:
+                console.print(diff_text)
+                if typer.confirm("  Apply this change?"):
+                    project_file.write_text(default_content)
+                    console.print(f"  [green]Updated[/green]")
+
+    console.print("\n[green]Agent upgrade complete.[/green]")
 
 
 if __name__ == "__main__":

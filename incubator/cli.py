@@ -15,6 +15,62 @@ console = Console()
 
 
 @app.command()
+def init(
+    directory: str = typer.Argument(".", help="Directory to create project in"),
+    force: bool = typer.Option(False, "--force", help="Overwrite existing project"),
+) -> None:
+    """Scaffold a new incubator project directory."""
+    import json
+    import shutil
+    from datetime import datetime, timezone
+    from pathlib import Path
+
+    from incubator.config import Settings
+
+    target = Path(directory).resolve()
+    marker = target / ".incubator"
+
+    if marker.exists() and not force:
+        console.print(f"[red]Already an incubator project: {target}[/red]")
+        console.print("[dim]Use --force to overwrite.[/dim]")
+        raise typer.Exit(1)
+
+    settings = Settings()
+    defaults = settings.defaults_dir
+
+    if not defaults.exists():
+        console.print("[red]Package defaults not found. Reinstall incubator.[/red]")
+        raise typer.Exit(1)
+
+    target.mkdir(parents=True, exist_ok=True)
+
+    for item in defaults.iterdir():
+        dest = target / item.name
+        if item.is_dir():
+            shutil.copytree(item, dest, dirs_exist_ok=True)
+        else:
+            shutil.copy2(item, dest)
+
+    (target / "workspace").mkdir(exist_ok=True)
+    (target / "pool").mkdir(exist_ok=True)
+
+    marker.write_text(json.dumps({
+        "version": "0.2.0",
+        "created": datetime.now(timezone.utc).isoformat(),
+    }, indent=2))
+
+    console.print(f"[green]Created incubator project in {target}[/green]")
+    try:
+        rel = target.relative_to(Path.cwd())
+    except ValueError:
+        rel = target
+    if rel != Path("."):
+        console.print(f"\n  cd {rel}")
+    console.print("  incubator serve          # start the web dashboard")
+    console.print('  incubator incubate "your idea here"')
+
+
+@app.command()
 def incubate(
     title: str = typer.Argument(help="Idea title"),
     description: str = typer.Option("", "--desc", "-d", help="Idea description"),

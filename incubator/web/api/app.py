@@ -4,8 +4,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
+
+# Allow Agent SDK calls when running inside a Claude Code session
+os.environ.pop("CLAUDECODE", None)
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles

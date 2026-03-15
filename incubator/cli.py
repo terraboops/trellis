@@ -11,9 +11,25 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
+from importlib.metadata import version as pkg_version
+
 from incubator.config import get_settings
 
+
+def _version_callback(value: bool) -> None:
+    if value:
+        typer.echo(pkg_version("incubator"))
+        raise typer.Exit()
+
+
 app = typer.Typer(name="incubator", help="Multi-agent idea incubation pipeline")
+
+
+@app.callback(invoke_without_command=True)
+def main(
+    version: bool = typer.Option(False, "--version", "-v", callback=_version_callback, is_eager=True, help="Show version"),
+) -> None:
+    pass
 console = Console()
 
 

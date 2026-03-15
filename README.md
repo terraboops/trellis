@@ -1,146 +1,130 @@
 # incubator
 
-An autonomous idea incubation pipeline powered by Claude.
+A team of Claude agents that takes an idea from research to release.
 
-Submit an idea, and a team of AI agents researches it, builds an MVP, validates
-it, and prepares it for release — with human oversight at every stage.
+You describe an idea. Agents research the market, write a feasibility study,
+build an MVP, test it, and prepare launch materials — running autonomously with
+human checkpoints between phases.
+
+![Ideas pipeline](docs/screenshots/dashboard-ideas.png)
 
 ## Quick start
 
 ```bash
-pip install .                        # or: pip install -e ".[dev]"
-incubator init myproject
-cd myproject
-incubator serve                      # web dashboard + worker pool at localhost:8000
+pip install .
+incubator init myproject && cd myproject
+incubator serve                      # dashboard + agents at localhost:8000
 ```
 
-## How it works
-
-An idea flows through four pipeline phases:
-
-1. **Ideation** — competitive analysis, feasibility study, feedback synthesis
-2. **Implementation** — builds an MVP in a sandboxed workspace
-3. **Validation** — tests the implementation against the spec
-4. **Release** — prepares deployment artifacts and launch materials
-
-Each phase is handled by a specialized Claude agent. Agents read and write to a
-shared **blackboard** (a filesystem directory per idea) so their work accumulates
-across phases.
-
-A **worker pool** schedules agents in time-boxed cycles, rotating across ideas
-by priority. Between phases, the orchestrator can pause for **human approval**
-(via Telegram or the web dashboard) before proceeding.
-
-After release, ideas can loop back for **refinement** — agents re-examine their
-previous work with fresh eyes and improve it.
-
-## Submitting ideas
+Submit your first idea:
 
 ```bash
 incubator incubate "Cat cafe in Vancouver" -d "A cat cafe targeting remote workers"
 ```
 
-Or use the web dashboard at `http://localhost:8000/ideas/new`.
+Or use the web dashboard at `localhost:8000/ideas/new`.
+
+## How it works
+
+An idea flows through four phases, each handled by a specialized agent:
+
+| Phase | Agent does |
+|-------|-----------|
+| **Ideation** | Competitive analysis, feasibility study, feedback synthesis |
+| **Implementation** | Builds an MVP in a sandboxed workspace |
+| **Validation** | Tests the implementation against the spec |
+| **Release** | Deployment artifacts and launch materials |
+
+Agents share state through a **blackboard** — a plain filesystem directory per
+idea. Each agent reads what previous agents wrote and adds its own work, so
+context accumulates naturally without a database.
+
+A **worker pool** schedules agents in time-boxed cycles, rotating across ideas
+by priority. Between phases, the system pauses for **human approval** via
+Telegram or the dashboard before proceeding.
+
+![Agent team](docs/screenshots/dashboard-agents.png)
+
+## Architecture
+
+```
+ You ──► idea ──► [ ideation ] ──► [ implementation ] ──► [ validation ] ──► [ release ]
+                       │                  │                     │                 │
+                       ▼                  ▼                     ▼                 ▼
+                  blackboard/ideas/<slug>/  ← shared filesystem state
+```
+
+- **No framework** — agents are Claude sessions with plain-text prompts and MCP tools
+- **Blackboard pattern** — agents coordinate through files, not message passing
+- **Worker pool** — configurable concurrency, time-boxing, and priority rotation
+- **Human-in-the-loop** — Telegram notifications + approval gates between phases
+- **Self-improving** — agents accumulate learnings in `knowledge/learnings.md` across runs
 
 ## Agent customization
 
 Each agent lives in `agents/<name>/` with:
 
-- `prompt.py` — the system prompt (a Python string constant `SYSTEM_PROMPT`)
-- `.claude/CLAUDE.md` — project-level instructions for the Claude session
+- `prompt.py` — the system prompt (a Python string constant)
+- `.claude/CLAUDE.md` — project-level instructions
 - `knowledge/learnings.md` — accumulated learnings (preserved across upgrades)
 
-Edit these files to change how agents behave. The prompts are plain text with
-no framework abstractions.
-
-### Adding new agents
-
-Create a new directory under `agents/` with `prompt.py` and register it in
-`registry.yaml`. See `docs/agents.md` for details.
-
-### Upgrading agent configs
-
-When you update the incubator package, run:
-
-```bash
-incubator agent upgrade --dry-run    # preview changes
-incubator agent upgrade --all        # apply all updates
-```
-
-This updates `prompt.py` and `CLAUDE.md` from the package defaults while
-preserving your `knowledge/learnings.md` and `.claude/` session data.
+The prompts are plain text. No abstractions, no DSLs. Edit them directly.
 
 ## Configuration
 
-### Environment variables (.env)
+Copy `.env.example` to `.env`:
 
 | Variable | Default | Description |
 |---|---|---|
-| `TELEGRAM_BOT_TOKEN` | — | Telegram bot token for notifications |
-| `TELEGRAM_CHAT_ID` | — | Telegram chat ID for notifications |
+| `TELEGRAM_BOT_TOKEN` | — | Telegram bot for notifications + approval |
 | `POOL_SIZE` | 3 | Concurrent agent slots |
 | `CYCLE_TIME_MINUTES` | 30 | Worker pool cycle window |
-| `WEB_HOST` | 0.0.0.0 | Dashboard bind address |
-| `WEB_PORT` | 8000 | Dashboard port |
-| `MODEL_TIER_HIGH` | claude-sonnet-4-6 | Model for main agents |
+| `MODEL_TIER_HIGH` | claude-sonnet-4-6 | Model for pipeline agents |
 | `MODEL_TIER_LOW` | claude-haiku-4-5 | Model for watchers |
 
-Copy `agents/.env.example` to `.env` and fill in your values.
+Agent definitions live in `registry.yaml` — models, tool access, turn limits,
+and token budgets per agent.
 
-### registry.yaml
+## CLI
 
-Defines agents, their models, tool access, turn limits, and budgets. Each agent
-entry maps to a directory under `agents/`. See the default `registry.yaml` for
-the full schema.
+```
+incubator init [DIR]          Scaffold a new project
+incubator incubate TITLE      Submit an idea
+incubator status IDEA         Show idea status
+incubator list                List all ideas
+incubator serve               Dashboard + worker pool
+incubator serve --background  Run as daemon
+incubator serve --stop        Stop daemon
+incubator agent upgrade       Update agents from package defaults
+```
 
-## CLI reference
-
-| Command | Description |
-|---|---|
-| `incubator init [DIR]` | Scaffold a new project |
-| `incubator incubate TITLE` | Submit an idea to the pipeline |
-| `incubator status IDEA` | Show idea status |
-| `incubator list` | List all ideas |
-| `incubator resume IDEA` | Resume a paused idea |
-| `incubator kill IDEA` | Kill an idea |
-| `incubator run` | Start the worker pool (no web UI) |
-| `incubator serve` | Start web dashboard + worker pool |
-| `incubator serve --background` | Run as a background daemon |
-| `incubator serve --stop` | Stop the background daemon |
-| `incubator watch` | Start background watchers |
-| `incubator evolve` | Run evolution retrospective |
-| `incubator agent upgrade` | Update agents from package defaults |
-
-## Project structure
+## Project layout
 
 ```
 myproject/
   .incubator            # project marker
-  .env                  # configuration
+  .env                  # config
   registry.yaml         # agent definitions
-  global-system-prompt.md
-  agents/               # agent prompts and knowledge
+  agents/               # prompts and knowledge
     ideation/
     implementation/
     validation/
     release/
-    artifact-check/     # cross-pipeline maintenance agent
+    artifact-check/     # runs across all ideas
   blackboard/ideas/     # per-idea shared state
-    _template/          # template for new ideas
-  workspace/            # agent working directories
-  pool/                 # pool state and logs
+  workspace/            # agent working dirs
 ```
 
 ## Development
 
 ```bash
-git clone <repo>
+git clone https://github.com/terrateamio/incubator.git
 pip install -e ".[dev]"
-pytest -v
+pytest -v                     # 21 tests
 ```
 
-## Further reading
+## Docs
 
-- [Agent system](docs/agents.md) — how agents work, customization, creating new agents
+- [Agent system](docs/agents.md) — customization, creating new agents
 - [Architecture](docs/architecture.md) — blackboard pattern, pool scheduler, phase transitions
 - [Self-hosting](docs/self-hosting.md) — daemon mode, launchd, systemd, reverse proxy

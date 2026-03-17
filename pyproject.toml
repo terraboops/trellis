@@ -1,6 +1,6 @@
 [project]
 name = "incubator"
-version = "0.2.1"
+version = "0.3.0"
 description = "Multi-agent idea incubation pipeline"
 requires-python = ">=3.12"
 dependencies = [

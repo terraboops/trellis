@@ -106,3 +106,31 @@ server {
 
 Set `WEB_HOST=127.0.0.1` in your `.env` so the dashboard only listens on
 localhost when behind a proxy.
+
+## Migrating from incubator
+
+If you're running an incubator deployment, migrate to trellis:
+
+```bash
+# 1. Stop the running server
+incubator serve --stop           # or: launchctl unload ..., systemctl stop incubator
+
+# 2. Install trellis
+pip install trellis              # or: brew install terraboops/tap/trellis
+
+# 3. Run the migration
+cd /path/to/your/project
+trellis migrate-project          # renames marker, pool files, registry paths, venv
+
+# 4. Update your service config
+#    - launchd: rename plist, update binary path to trellis
+#    - systemd: rename unit, update ExecStart to trellis serve
+#    - cron: update command references
+
+# 5. Start with the new name
+trellis serve --background
+```
+
+The `migrate-project` command handles the project directory. You still need
+to update any external references (launchd plists, systemd units, shell aliases,
+cron jobs) from `incubator` to `trellis` yourself.

@@ -114,8 +114,32 @@ trellis run                     Worker pool only (no web UI)
 trellis evolve                  Run knowledge curation
 trellis migrate                 Apply registry migrations
 trellis migrate-knowledge       Convert learnings.md to Knowledge Objects
+trellis migrate-project [DIR]   Migrate an incubator project to Trellis
 trellis agent upgrade           Update agents from package defaults
 ```
+
+## Migrating from incubator
+
+If you have an existing incubator project, Trellis includes a one-command migration:
+
+```bash
+pip install trellis          # or: brew install terraboops/tap/trellis
+cd /path/to/your/project
+trellis migrate-project
+```
+
+This handles everything automatically:
+
+1. Renames `.incubator` → `.trellis` (project marker)
+2. Renames `pool/incubator.log` → `pool/trellis.log`
+3. Renames `pool/incubator.pid` → `pool/trellis.pid`
+4. Updates `registry.yaml` claude_home paths
+5. Reinstalls trellis in your project `.venv` (if present)
+
+Use `--dry-run` to preview changes without applying them.
+
+After migrating, replace `incubator` with `trellis` in any shell aliases,
+cron jobs, launchd plists, or systemd units.
 
 ## Project layout
 

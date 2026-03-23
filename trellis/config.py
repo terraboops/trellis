@@ -6,10 +6,12 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 def find_project_root(start: Path = None) -> Path:
-    """Walk up from start (default cwd) looking for .trellis marker."""
+    """Walk up from start (default cwd) looking for .trellis (or legacy .incubator) marker."""
     current = (start or Path.cwd()).resolve()
     while True:
         if (current / ".trellis").is_file():
+            return current
+        if (current / ".incubator").is_file():
             return current
         parent = current.parent
         if parent == current:

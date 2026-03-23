@@ -573,5 +573,125 @@ def migrate(
     console.print("\n[green]Migration complete.[/green]")
 
 
+@app.command(name="migrate-project")
+def migrate_project(
+    directory: str = typer.Argument(".", help="Project directory to migrate"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show what would change without applying"),
+) -> None:
+    """Migrate an incubator project to Trellis.
+
+    Renames .incubator → .trellis, updates pool files, registry paths,
+    and reinstalls the package in the project venv if one exists.
+    """
+    import json
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    target = Path(directory).resolve()
+    old_marker = target / ".incubator"
+    new_marker = target / ".trellis"
+
+    if new_marker.exists():
+        console.print(f"[green]Already a Trellis project: {target}[/green]")
+        raise typer.Exit(0)
+
+    if not old_marker.exists():
+        console.print(f"[red]No .incubator marker found in {target}[/red]")
+        console.print("[dim]This doesn't look like an incubator project.[/dim]")
+        raise typer.Exit(1)
+
+    steps = []
+
+    # 1. Rename marker
+    steps.append((".incubator → .trellis", old_marker, new_marker))
+
+    # 2. Pool files
+    pool_dir = target / "pool"
+    old_log = pool_dir / "incubator.log"
+    new_log = pool_dir / "trellis.log"
+    old_pid = pool_dir / "incubator.pid"
+    new_pid = pool_dir / "trellis.pid"
+
+    # 3. Registry claude_home paths
+    registry_path = target / "registry.yaml"
+    registry_needs_update = False
+    if registry_path.exists():
+        registry_text = registry_path.read_text()
+        if "incubator/agents" in registry_text:
+            registry_needs_update = True
+
+    # 4. Venv
+    venv_dir = target / ".venv"
+    venv_python = venv_dir / "bin" / "python"
+    has_venv = venv_python.exists()
+
+    # Show plan
+    console.print(f"\n[bold]Migrating {target}[/bold]\n")
+    console.print("  [cyan]1.[/cyan] Rename .incubator → .trellis")
+    if old_log.exists():
+        console.print("  [cyan]2.[/cyan] Rename pool/incubator.log → pool/trellis.log")
+    if old_pid.exists():
+        console.print("  [cyan]3.[/cyan] Rename pool/incubator.pid → pool/trellis.pid")
+        console.print("     [yellow]Stop any running incubator serve first![/yellow]")
+    if registry_needs_update:
+        console.print("  [cyan]4.[/cyan] Update registry.yaml claude_home paths")
+    if has_venv:
+        console.print("  [cyan]5.[/cyan] Reinstall trellis in .venv (replaces incubator package)")
+    console.print("")
+
+    if dry_run:
+        console.print("[dim]--dry-run: no changes applied.[/dim]")
+        return
+
+    # Execute
+    # 1. Marker
+    old_marker.rename(new_marker)
+    console.print("  [green]✓[/green] .incubator → .trellis")
+
+    # 2. Pool log
+    if old_log.exists():
+        old_log.rename(new_log)
+        console.print("  [green]✓[/green] pool/incubator.log → pool/trellis.log")
+
+    # 3. Pool PID
+    if old_pid.exists():
+        old_pid.rename(new_pid)
+        console.print("  [green]✓[/green] pool/incubator.pid → pool/trellis.pid")
+
+    # 4. Registry
+    if registry_needs_update:
+        updated = registry_text.replace("incubator/agents", "trellis/agents")
+        registry_path.write_text(updated)
+        console.print("  [green]✓[/green] registry.yaml claude_home paths updated")
+
+    # 5. Venv
+    if has_venv:
+        console.print("  [dim]Reinstalling trellis in .venv...[/dim]")
+        # Find where trellis is installed from (this running package)
+        package_root = Path(__file__).resolve().parent.parent
+        result = subprocess.run(
+            [str(venv_python), "-m", "pip", "install", "--quiet", str(package_root)],
+            capture_output=True, text=True,
+        )
+        if result.returncode == 0:
+            console.print("  [green]✓[/green] trellis installed in .venv")
+            # Uninstall old incubator package if present
+            subprocess.run(
+                [str(venv_python), "-m", "pip", "uninstall", "-y", "--quiet", "incubator"],
+                capture_output=True, text=True,
+            )
+        else:
+            console.print(f"  [yellow]⚠ venv install failed — run manually:[/yellow]")
+            console.print(f"    pip install trellis")
+            if result.stderr:
+                for line in result.stderr.strip().split("\n")[-3:]:
+                    console.print(f"    [dim]{line}[/dim]")
+
+    console.print(f"\n[bold green]Migration complete.[/bold green]")
+    console.print(f"\n  cd {target}")
+    console.print(f"  trellis serve")
+
+
 if __name__ == "__main__":
     app()

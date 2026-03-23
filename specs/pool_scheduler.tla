@@ -1,19 +1,24 @@
 --------------------------- MODULE pool_scheduler ---------------------------
-\* TLA+ specification of the incubator pool scheduler.
+\* TLA+ specification of the Trellis pool scheduler.
 \* Models: priority queue, cadence-aware scheduling, parallel groups,
-\*         gating modes, feedback scheduling, refinement loops,
-\*         iteration caps, and per-idea background agents.
+\*         gating modes (auto/human/llm-decides), feedback scheduling,
+\*         refinement loops, iteration caps, post-ready work,
+\*         DEADLINE-as-success semantics, and per-idea background agents.
 \*
-\* Updated 2026-03-21 to match current implementation.
+\* Updated 2026-03-22 — revised semantics:
+\*   - Feedback runs do NOT increment iterCount (feedback is human-directed)
+\*   - Released ideas are NOT terminal — watchers + feedback run forever
+\*   - Only killed ideas are truly terminal
+\*   - DismissReview resets only the agent(s) that hit the iteration cap
 \*
 \* Implementation notes (Python divergences — intentional simplifications):
-\*   - The Python iteration counter is global per-idea (not per-agent-per-idea
-\*     as in this spec). This is more restrictive and intentionally simpler.
 \*   - The Python uses continuous floating-point priorities rather than the
 \*     discrete integers modeled here. The spec abstracts this to pipeline=5,
 \*     feedback=4, background=3 for tractable model checking.
 \*   - max_refinement_cycles=0 means infinite in Python (not modeled here;
 \*     the spec uses a finite MaxRefinementCycles constant).
+\*   - Kill is modeled atomically (queue drain). Python handles this lazily
+\*     — killed-idea jobs may dispatch before the next producer scan.
 
 EXTENDS Integers, Sequences, FiniteSets
 
@@ -23,16 +28,19 @@ CONSTANTS
 
 \* Model values — hardcoded for tractable checking
 PipelineAgents == <<"ideation", "validation">>
-BackgroundAgents == {"watcher"}
-AllAgentNames == {PipelineAgents[i] : i \in 1..Len(PipelineAgents)} \cup BackgroundAgents
+PostReadyAgents == {"watcher"}      \* post_ready roles (run after pipeline done)
+BackgroundAgents == {"bg-watcher"}  \* cadence-based agents
+AllAgentNames == {PipelineAgents[i] : i \in 1..Len(PipelineAgents)}
+                 \cup PostReadyAgents \cup BackgroundAgents
 
 \* Parallel groups: agents in the same group serialize on the same idea
-SerialGroup == {"ideation", "validation"}
+SerialGroup == {PipelineAgents[i] : i \in 1..Len(PipelineAgents)}
+
+\* MaxConcurrent: configurable per agent in registry (default 1)
 MaxConcurrent(agent) == 1
 
-\* Gating modes: "auto" | "human" | "llm"
-\* For model checking, each idea gets a fixed mode
-GatingMode == "auto"
+\* Gating modes: "auto" | "human" | "llm-decides"
+GatingModes == {"auto", "human", "llm-decides"}
 
 \* Refinement: how many times pipeline can loop before terminal release
 MaxRefinementCycles == 1
@@ -49,10 +57,13 @@ VARIABLES
     needsReview,        \* Function: idea -> BOOLEAN (human review gate)
     hasFeedback,        \* Function: idea -> function: agent -> BOOLEAN
     cadenceDue,         \* Function: background_agent -> BOOLEAN
-    runCount            \* Function: agent -> nat (currently running instances)
+    runCount,           \* Function: agent -> nat (currently running instances)
+    postReadyDone,      \* Function: idea -> function: post_ready_agent -> BOOLEAN
+    gatingMode          \* Function: idea -> gating mode string
 
 vars == <<queue, wState, wJob, phase, stageResults, iterCount,
-          releaseCount, needsReview, hasFeedback, cadenceDue, runCount>>
+          releaseCount, needsReview, hasFeedback, cadenceDue, runCount,
+          postReadyDone, gatingMode>>
 
 \* Sentinel values
 NullJob == [role |-> "NONE", idea |-> "NONE", kind |-> "NONE", priority |-> 0]
@@ -72,6 +83,9 @@ NextAgent(idea) ==
 
 PipelineDone(idea) ==
     \A i \in 1..Len(PipelineAgents) : stageResults[idea][PipelineAgents[i]] = "proceed"
+
+AllPostReadyDone(idea) ==
+    \A a \in PostReadyAgents : postReadyDone[idea][a]
 
 \* Group conflict: another agent from the serial group is running on this idea
 HasConflict(agent, idea) ==
@@ -103,11 +117,11 @@ IsEligible(idea) ==
     /\ phase[idea] \notin {"killed", "paused", "released"}
     /\ ~needsReview[idea]
 
-\* Priority: pipeline=5, feedback=4, background=3 (simplified from continuous floats)
-JobPriority(job) ==
-    IF job.kind = "pipeline" THEN 5
-    ELSE IF job.kind = "feedback" THEN 4
-    ELSE 3  \* background
+\* Released but still needs post-ready work
+IsPostReadyEligible(idea) ==
+    /\ PipelineDone(idea)
+    /\ ~AllPostReadyDone(idea)
+    /\ phase[idea] # "killed"
 
 ------------------------------------------------------------------------
 \* Initial state
@@ -126,6 +140,9 @@ Init ==
                         [a \in AllAgentNames |-> FALSE]]
     /\ cadenceDue = [a \in BackgroundAgents |-> FALSE]
     /\ runCount = [a \in AllAgentNames |-> 0]
+    /\ postReadyDone = [i \in Ideas |->
+                          [a \in PostReadyAgents |-> FALSE]]
+    /\ gatingMode = [i \in Ideas |-> "auto"]
 
 ------------------------------------------------------------------------
 \* ACTIONS
@@ -143,28 +160,28 @@ ProducePipeline(idea) ==
        /\ queue' = queue \cup {[role |-> agent, idea |-> idea,
                                  kind |-> "pipeline", priority |-> 5]}
        /\ UNCHANGED <<wState, wJob, phase, stageResults, iterCount,
-                       releaseCount, needsReview, hasFeedback, cadenceDue, runCount>>
+                       releaseCount, needsReview, hasFeedback, cadenceDue,
+                       runCount, postReadyDone, gatingMode>>
 
-\* Producer: enqueue feedback-driven work for an agent with pending feedback
-\* (original — embedded in pipeline path, restricted to IsEligible ideas)
+\* Producer: enqueue post-ready agent when pipeline is done but post-ready work remains
+ProducePostReady(idea, agent) ==
+    /\ agent \in PostReadyAgents
+    /\ IsPostReadyEligible(idea)
+    /\ ~postReadyDone[idea][agent]
+    /\ ~InQueue(agent, idea)
+    /\ ~IsRunning(agent, idea)
+    /\ queue' = queue \cup {[role |-> agent, idea |-> idea,
+                              kind |-> "pipeline", priority |-> 5]}
+    /\ UNCHANGED <<wState, wJob, phase, stageResults, iterCount,
+                    releaseCount, needsReview, hasFeedback, cadenceDue,
+                    runCount, postReadyDone, gatingMode>>
+
+\* Producer: enqueue feedback-driven work. Feedback runs on ALL non-killed
+\* ideas — including released, review-gated, paused. This is by design:
+\* watchers discover new info and submit feedback that pipeline agents
+\* process into artifacts. The feedback loop runs forever on living ideas.
 ProduceFeedback(idea, agent) ==
-    /\ IsEligible(idea)
-    /\ agent \in PipelineAgentSet
-    /\ hasFeedback[idea][agent]
-    /\ ~InQueue(agent, idea)
-    /\ ~IsRunning(agent, idea)
-    /\ queue' = queue \cup {[role |-> agent, idea |-> idea,
-                              kind |-> "feedback", priority |-> 4]}
-    /\ UNCHANGED <<wState, wJob, phase, stageResults, iterCount,
-                    releaseCount, needsReview, hasFeedback, cadenceDue, runCount>>
-
-\* Producer: independent feedback scan (matches Python _feedback_producer).
-\* Deliberately relaxes IsEligible — feedback is serviced even when an idea
-\* is in review, paused, or released-with-pending-work. Only killed ideas
-\* and terminally released ideas are excluded.
-ProduceFeedbackIndependent(idea, agent) ==
     /\ phase[idea] # "killed"
-    /\ phase[idea] # "released"   \* released is terminal in the spec
     /\ agent \in PipelineAgentSet
     /\ hasFeedback[idea][agent]
     /\ ~InQueue(agent, idea)
@@ -172,7 +189,8 @@ ProduceFeedbackIndependent(idea, agent) ==
     /\ queue' = queue \cup {[role |-> agent, idea |-> idea,
                               kind |-> "feedback", priority |-> 4]}
     /\ UNCHANGED <<wState, wJob, phase, stageResults, iterCount,
-                    releaseCount, needsReview, hasFeedback, cadenceDue, runCount>>
+                    releaseCount, needsReview, hasFeedback, cadenceDue,
+                    runCount, postReadyDone, gatingMode>>
 
 \* Cadence fires for a background agent
 CadenceTick(agent) ==
@@ -180,19 +198,22 @@ CadenceTick(agent) ==
     /\ ~cadenceDue[agent]
     /\ cadenceDue' = [cadenceDue EXCEPT ![agent] = TRUE]
     /\ UNCHANGED <<queue, wState, wJob, phase, stageResults, iterCount,
-                    releaseCount, needsReview, hasFeedback, runCount>>
+                    releaseCount, needsReview, hasFeedback, runCount,
+                    postReadyDone, gatingMode>>
 
-\* Producer: enqueue a due background agent PER IDEA (not global)
+\* Producer: enqueue a due background agent PER IDEA (not global).
+\* Runs on ALL non-killed ideas — watchers monitor forever by design.
 ProduceBackground(agent, idea) ==
     /\ agent \in BackgroundAgents
     /\ cadenceDue[agent]
-    /\ phase[idea] # "killed"  \* background agents run on all non-killed ideas
+    /\ phase[idea] # "killed"
     /\ ~InQueue(agent, idea)
     /\ ~IsRunning(agent, idea)
     /\ queue' = queue \cup {[role |-> agent, idea |-> idea,
                               kind |-> "background", priority |-> 3]}
     /\ UNCHANGED <<wState, wJob, phase, stageResults, iterCount,
-                    releaseCount, needsReview, hasFeedback, cadenceDue, runCount>>
+                    releaseCount, needsReview, hasFeedback, cadenceDue,
+                    runCount, postReadyDone, gatingMode>>
 
 \* External: human submits feedback targeting an agent on an idea
 SubmitFeedback(idea, agent) ==
@@ -201,17 +222,32 @@ SubmitFeedback(idea, agent) ==
     /\ ~hasFeedback[idea][agent]
     /\ hasFeedback' = [hasFeedback EXCEPT ![idea][agent] = TRUE]
     /\ UNCHANGED <<queue, wState, wJob, phase, stageResults, iterCount,
-                    releaseCount, needsReview, cadenceDue, runCount>>
+                    releaseCount, needsReview, cadenceDue, runCount,
+                    postReadyDone, gatingMode>>
 
-\* External: human dismisses review gate — resets iteration counters
-\* (human intervention = fresh mandate, agent gets new attempts)
+\* External: human dismisses review gate.
+\* Only resets iterCount for the agent(s) that hit the cap — minimal
+\* intervention. Other agents keep their counters.
 DismissReview(idea) ==
     /\ needsReview[idea]
     /\ needsReview' = [needsReview EXCEPT ![idea] = FALSE]
     /\ iterCount' = [iterCount EXCEPT ![idea] =
-                       [a \in PipelineAgentSet |-> 0]]
+                      [a \in PipelineAgentSet |->
+                        IF iterCount[idea][a] >= MaxIteratePerStage
+                        THEN 0
+                        ELSE iterCount[idea][a]]]
     /\ UNCHANGED <<queue, wState, wJob, phase, stageResults,
-                    releaseCount, hasFeedback, cadenceDue, runCount>>
+                    releaseCount, hasFeedback, cadenceDue, runCount,
+                    postReadyDone, gatingMode>>
+
+\* External: human changes gating mode for an idea
+ChangeGating(idea, mode) ==
+    /\ mode \in GatingModes
+    /\ gatingMode[idea] # mode
+    /\ gatingMode' = [gatingMode EXCEPT ![idea] = mode]
+    /\ UNCHANGED <<queue, wState, wJob, phase, stageResults, iterCount,
+                    releaseCount, needsReview, hasFeedback, cadenceDue,
+                    runCount, postReadyDone>>
 
 \* ── Dispatch ─────────────────────────────────────────────────────
 
@@ -220,7 +256,6 @@ Dispatch(worker, job) ==
     /\ wState[worker] = "idle"
     /\ job \in queue
     /\ Schedulable(job.role, job.idea)
-    \* Must pick the highest priority schedulable job
     /\ \A other \in queue :
         Schedulable(other.role, other.idea) => other.priority <= job.priority
     /\ queue' = queue \ {job}
@@ -228,31 +263,59 @@ Dispatch(worker, job) ==
     /\ wJob' = [wJob EXCEPT ![worker] = job]
     /\ runCount' = [runCount EXCEPT ![job.role] = @ + 1]
     /\ UNCHANGED <<phase, stageResults, iterCount, releaseCount,
-                    needsReview, hasFeedback, cadenceDue>>
+                    needsReview, hasFeedback, cadenceDue, postReadyDone,
+                    gatingMode>>
 
 \* ── Completion: pipeline agent proceeds ──────────────────────────
 
 CompleteProceed(worker) ==
     LET idea == wJob[worker].idea
         agent == wJob[worker].role
+        kind == wJob[worker].kind
         newResults == [stageResults EXCEPT ![idea][agent] = "proceed"]
         allDone == \A i \in 1..Len(PipelineAgents) :
                         newResults[idea][PipelineAgents[i]] = "proceed"
-        \* Refinement: if all done and under max cycles, loop back
         shouldLoop == allDone /\ releaseCount[idea] < MaxRefinementCycles
         shouldRelease == allDone /\ releaseCount[idea] >= MaxRefinementCycles
+        mode == gatingMode[idea]
     IN /\ wState[worker] = "running"
        /\ wJob[worker] # NullJob
-       /\ wJob[worker].kind \in {"pipeline", "feedback"}
+       /\ kind \in {"pipeline", "feedback"}
        /\ agent \in PipelineAgentSet
-       \* Gating: human-review mode blocks before proceeding
-       /\ IF GatingMode = "human"
-          THEN /\ needsReview' = [needsReview EXCEPT ![idea] = TRUE]
+       \* Feedback runs do NOT touch iterCount — feedback is human-directed
+       /\ CASE mode = "human" /\ kind = "pipeline" ->
+               /\ needsReview' = [needsReview EXCEPT ![idea] = TRUE]
                /\ stageResults' = newResults
                /\ phase' = phase
                /\ releaseCount' = releaseCount
                /\ iterCount' = iterCount
-          ELSE /\ stageResults' = IF shouldLoop
+               /\ postReadyDone' = postReadyDone
+          [] mode = "llm-decides" /\ kind = "pipeline" ->
+               \* Non-deterministic: agent may or may not flag for review
+               \/ (/\ needsReview' = [needsReview EXCEPT ![idea] = TRUE]
+                   /\ stageResults' = newResults
+                   /\ phase' = phase
+                   /\ releaseCount' = releaseCount
+                   /\ iterCount' = iterCount
+                   /\ postReadyDone' = postReadyDone)
+               \/ (/\ stageResults' = IF shouldLoop
+                                      THEN [newResults EXCEPT ![idea] =
+                                            [a \in AllAgentNames |-> "pending"]]
+                                      ELSE newResults
+                   /\ phase' = IF shouldRelease
+                                THEN [phase EXCEPT ![idea] = "released"]
+                                ELSE phase
+                   /\ releaseCount' = IF allDone
+                                      THEN [releaseCount EXCEPT ![idea] = @ + 1]
+                                      ELSE releaseCount
+                   /\ iterCount' = [iterCount EXCEPT ![idea][agent] = 0]
+                   /\ needsReview' = needsReview
+                   /\ postReadyDone' = IF shouldLoop
+                                       THEN [postReadyDone EXCEPT ![idea] =
+                                             [a \in PostReadyAgents |-> FALSE]]
+                                       ELSE postReadyDone)
+          [] OTHER ->  \* "auto" for pipeline, OR any feedback proceed
+               /\ stageResults' = IF shouldLoop
                                   THEN [newResults EXCEPT ![idea] =
                                         [a \in AllAgentNames |-> "pending"]]
                                   ELSE newResults
@@ -262,34 +325,75 @@ CompleteProceed(worker) ==
                /\ releaseCount' = IF allDone
                                   THEN [releaseCount EXCEPT ![idea] = @ + 1]
                                   ELSE releaseCount
-               /\ iterCount' = [iterCount EXCEPT ![idea][agent] = 0]
+               \* Only pipeline runs reset iterCount; feedback doesn't touch it
+               /\ iterCount' = IF kind = "pipeline"
+                                THEN [iterCount EXCEPT ![idea][agent] = 0]
+                                ELSE iterCount
                /\ needsReview' = needsReview
+               /\ postReadyDone' = IF shouldLoop
+                                   THEN [postReadyDone EXCEPT ![idea] =
+                                         [a \in PostReadyAgents |-> FALSE]]
+                                   ELSE postReadyDone
        /\ wState' = [wState EXCEPT ![worker] = "idle"]
        /\ runCount' = [runCount EXCEPT ![agent] = @ - 1]
        /\ wJob' = [wJob EXCEPT ![worker] = NullJob]
-       /\ UNCHANGED <<queue, hasFeedback, cadenceDue>>
+       /\ UNCHANGED <<queue, hasFeedback, cadenceDue, gatingMode>>
 
 \* ── Completion: pipeline agent iterates ──────────────────────────
+\* Feedback runs do NOT increment iterCount or trigger the iteration cap.
 
 CompleteIterate(worker) ==
     LET idea == wJob[worker].idea
         agent == wJob[worker].role
+        kind == wJob[worker].kind
+        isFeedback == kind = "feedback"
         iters == iterCount[idea][agent] + 1
         hitCap == iters >= MaxIteratePerStage
     IN /\ wState[worker] = "running"
        /\ wJob[worker] # NullJob
-       /\ wJob[worker].kind \in {"pipeline", "feedback"}
+       /\ kind \in {"pipeline", "feedback"}
        /\ agent \in PipelineAgentSet
        /\ stageResults' = [stageResults EXCEPT ![idea][agent] = "iterate"]
-       /\ iterCount' = [iterCount EXCEPT ![idea][agent] = iters]
-       \* If hit iteration cap, gate to human review instead of looping
-       /\ needsReview' = IF hitCap
+       \* Feedback: don't touch iterCount or trigger review gate
+       /\ iterCount' = IF isFeedback
+                        THEN iterCount
+                        ELSE [iterCount EXCEPT ![idea][agent] = iters]
+       /\ needsReview' = IF ~isFeedback /\ hitCap
                           THEN [needsReview EXCEPT ![idea] = TRUE]
                           ELSE needsReview
        /\ wState' = [wState EXCEPT ![worker] = "idle"]
        /\ runCount' = [runCount EXCEPT ![agent] = @ - 1]
        /\ wJob' = [wJob EXCEPT ![worker] = NullJob]
-       /\ UNCHANGED <<queue, phase, releaseCount, hasFeedback, cadenceDue>>
+       /\ UNCHANGED <<queue, phase, releaseCount, hasFeedback, cadenceDue,
+                       postReadyDone, gatingMode>>
+
+\* ── Completion: pipeline agent hits DEADLINE (timeout) ───────────
+\* Python treats DEADLINE as a successful completion — the agent's
+\* phase_recommendation is read and applied the same as RunStatus.OK.
+
+CompleteDeadline(worker) ==
+    /\ wState[worker] = "running"
+    /\ wJob[worker] # NullJob
+    /\ wJob[worker].kind \in {"pipeline", "feedback"}
+    /\ wJob[worker].role \in PipelineAgentSet
+    /\ \/ CompleteProceed(worker)
+       \/ CompleteIterate(worker)
+
+\* ── Completion: post-ready agent finishes ─────────────────────────
+
+CompletePostReady(worker) ==
+    LET idea == wJob[worker].idea
+        agent == wJob[worker].role
+    IN /\ wState[worker] = "running"
+       /\ wJob[worker] # NullJob
+       /\ wJob[worker].kind = "pipeline"
+       /\ agent \in PostReadyAgents
+       /\ postReadyDone' = [postReadyDone EXCEPT ![idea][agent] = TRUE]
+       /\ wState' = [wState EXCEPT ![worker] = "idle"]
+       /\ runCount' = [runCount EXCEPT ![agent] = @ - 1]
+       /\ wJob' = [wJob EXCEPT ![worker] = NullJob]
+       /\ UNCHANGED <<queue, phase, stageResults, iterCount, releaseCount,
+                       needsReview, hasFeedback, cadenceDue, gatingMode>>
 
 \* ── Completion: background agent finishes ────────────────────────
 
@@ -303,7 +407,7 @@ CompleteBack(worker) ==
     /\ runCount' = [runCount EXCEPT ![wJob[worker].role] = @ - 1]
     /\ wJob' = [wJob EXCEPT ![worker] = NullJob]
     /\ UNCHANGED <<queue, phase, stageResults, iterCount, releaseCount,
-                    needsReview, hasFeedback>>
+                    needsReview, hasFeedback, postReadyDone, gatingMode>>
 
 \* ── Completion: feedback run clears the feedback flag ─────────────
 
@@ -319,7 +423,7 @@ CompleteFeedbackRun(worker) ==
        /\ runCount' = [runCount EXCEPT ![agent] = @ - 1]
        /\ wJob' = [wJob EXCEPT ![worker] = NullJob]
        /\ UNCHANGED <<queue, phase, stageResults, iterCount, releaseCount,
-                       needsReview, cadenceDue>>
+                       needsReview, cadenceDue, postReadyDone, gatingMode>>
 
 \* ── Completion: error (any agent) ────────────────────────────────
 \* TLA+ verified finding: background agents MUST reset cadence on error
@@ -335,11 +439,9 @@ CompleteError(worker) ==
                      ELSE cadenceDue
     /\ wJob' = [wJob EXCEPT ![worker] = NullJob]
     /\ UNCHANGED <<queue, phase, stageResults, iterCount, releaseCount,
-                    needsReview, hasFeedback>>
+                    needsReview, hasFeedback, postReadyDone, gatingMode>>
 
 \* ── Agent kills idea ─────────────────────────────────────────────
-\* Kill also drains the queue of work for this idea (the real code
-\* handles this lazily in _handle_result, but modeled atomically here)
 
 Kill(worker) ==
     LET idea == wJob[worker].idea
@@ -352,36 +454,42 @@ Kill(worker) ==
        /\ runCount' = [runCount EXCEPT ![wJob[worker].role] = @ - 1]
        /\ wJob' = [wJob EXCEPT ![worker] = NullJob]
        /\ UNCHANGED <<stageResults, iterCount, releaseCount,
-                       needsReview, hasFeedback, cadenceDue>>
+                       needsReview, hasFeedback, cadenceDue,
+                       postReadyDone, gatingMode>>
 
 ------------------------------------------------------------------------
 Next ==
     \/ \E i \in Ideas : ProducePipeline(i)
+    \/ \E i \in Ideas, a \in PostReadyAgents : ProducePostReady(i, a)
     \/ \E i \in Ideas, a \in PipelineAgentSet : ProduceFeedback(i, a)
-    \/ \E i \in Ideas, a \in PipelineAgentSet : ProduceFeedbackIndependent(i, a)
     \/ \E a \in BackgroundAgents : CadenceTick(a)
     \/ \E a \in BackgroundAgents, i \in Ideas : ProduceBackground(a, i)
     \/ \E i \in Ideas, a \in PipelineAgentSet : SubmitFeedback(i, a)
     \/ \E i \in Ideas : DismissReview(i)
+    \/ \E i \in Ideas, m \in GatingModes : ChangeGating(i, m)
     \/ \E w \in Workers, j \in queue : Dispatch(w, j)
     \/ \E w \in Workers : CompleteProceed(w)
     \/ \E w \in Workers : CompleteIterate(w)
+    \/ \E w \in Workers : CompleteDeadline(w)
+    \/ \E w \in Workers : CompletePostReady(w)
     \/ \E w \in Workers : CompleteBack(w)
     \/ \E w \in Workers : CompleteFeedbackRun(w)
     \/ \E w \in Workers : CompleteError(w)
     \/ \E w \in Workers : Kill(w)
 
-\* Strong fairness: if an action is repeatedly enabled, it must eventually fire.
+\* Strong fairness
 Fairness ==
     /\ \A i \in Ideas : SF_vars(ProducePipeline(i))
+    /\ \A i \in Ideas, a \in PostReadyAgents : SF_vars(ProducePostReady(i, a))
     /\ \A i \in Ideas, a \in PipelineAgentSet : SF_vars(ProduceFeedback(i, a))
-    /\ \A i \in Ideas, a \in PipelineAgentSet : SF_vars(ProduceFeedbackIndependent(i, a))
     /\ \A a \in BackgroundAgents : SF_vars(CadenceTick(a))
     /\ \A a \in BackgroundAgents, i \in Ideas : SF_vars(ProduceBackground(a, i))
     /\ \A i \in Ideas : SF_vars(DismissReview(i))
     /\ \A w \in Workers : SF_vars(\E j \in queue : Dispatch(w, j))
     /\ \A w \in Workers : SF_vars(CompleteProceed(w))
     /\ \A w \in Workers : SF_vars(CompleteIterate(w))
+    /\ \A w \in Workers : SF_vars(CompleteDeadline(w))
+    /\ \A w \in Workers : SF_vars(CompletePostReady(w))
     /\ \A w \in Workers : SF_vars(CompleteBack(w))
     /\ \A w \in Workers : SF_vars(CompleteFeedbackRun(w))
     /\ \A w \in Workers : SF_vars(CompleteError(w))
@@ -411,21 +519,16 @@ RunCountOK ==
         runCount[a] = Cardinality({w \in Workers :
             wState[w] = "running" /\ wJob[w] # NullJob /\ wJob[w].role = a})
 
-\* Iteration count never exceeds cap + 1 (cap is checked after increment)
+\* Pipeline iteration count never exceeds cap (feedback doesn't increment)
 IterCountBounded ==
     \A i \in Ideas, a \in PipelineAgentSet :
         iterCount[i][a] <= MaxIteratePerStage
 
-\* Released ideas are terminal (no more pipeline work)
-ReleasedIsTerminal ==
-    \A i \in Ideas :
-        phase[i] = "released" =>
-            \A w \in Workers :
-                (wState[w] = "running" /\ wJob[w].idea = i)
-                => wJob[w].kind = "background"
+\* Killed ideas get no new work in the queue
+KilledIsTerminal ==
+    \A j \in queue : phase[j.idea] # "killed"
 
-\* Killed ideas get no new pipeline or feedback work
-\* (Note: in-progress work can race — checked post-completion in code)
+\* No new pipeline or feedback work queued for killed ideas
 NoNewWorkOnKilled ==
     \A j \in queue :
         j.kind \in {"pipeline", "feedback"} => phase[j.idea] # "killed"
@@ -434,14 +537,12 @@ NoNewWorkOnKilled ==
 \* LIVENESS PROPERTIES
 
 \* Every submitted idea eventually reaches released or killed
-\* (requires DismissReview fairness to unblock gated ideas)
 Progress == \A i \in Ideas :
     phase[i] = "submitted" ~> phase[i] \in {"released", "killed"}
 
-\* Every due watcher eventually runs — unless all ideas are killed/released
-\* (no work to enqueue if every idea is terminal)
+\* Every due watcher eventually runs — unless all ideas are killed
 WatcherProgress == \A a \in BackgroundAgents :
-    (cadenceDue[a] = TRUE /\ \E i \in Ideas : phase[i] \notin {"killed", "released"})
+    (cadenceDue[a] = TRUE /\ \E i \in Ideas : phase[i] # "killed")
     ~> cadenceDue[a] = FALSE
 
 \* Feedback is eventually consumed — unless the idea is killed

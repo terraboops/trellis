@@ -47,6 +47,7 @@ trellis = [
     "defaults/**/.*",
     "web/frontend/templates/**/*",
     "web/frontend/static/**/*",
+    "nono-wrapper.sh",
 ]
 
 [tool.pytest.ini_options]

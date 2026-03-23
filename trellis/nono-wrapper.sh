@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # Wraps claude CLI with nono kernel-level sandbox enforcement.
-# Environment variables NONO_PROFILE and NONO_FLAGS are set by agent.py.
+# NONO_FLAGS is set by agent.py with --read, --allow, --allow-command flags.
+# Uses --profile claude-code as base (provides ~/.claude, keychain, .gitconfig, tmp).
 set -euo pipefail
 
-# Pre-create optional paths that the claude-code profile references.
-# Without this, nono prints WARN messages to stdout which corrupt the
-# SDK's JSON stream (nono uses stdout even with --silent for these).
+# Suppress WARN messages for missing optional claude-code profile paths.
+# These go to stdout and corrupt the SDK's JSON stream.
 mkdir -p "${HOME}/.vscode" 2>/dev/null || true
 mkdir -p "${HOME}/Library/Application Support/Code" 2>/dev/null || true
 touch "${HOME}/.gitignore_global" 2>/dev/null || true
@@ -13,9 +13,9 @@ touch "${HOME}/.gitignore_global" 2>/dev/null || true
 exec nono run \
     --silent \
     --no-diagnostics \
-    --exec \
+    --trust-override \
     --profile claude-code \
-    --config "${NONO_PROFILE}" \
-    ${NONO_FLAGS:-} \
     --allow "${HOME}/.claude-personal" \
+    --read /dev \
+    ${NONO_FLAGS:-} \
     -- claude "$@"

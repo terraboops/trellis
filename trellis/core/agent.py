@@ -396,43 +396,39 @@ class BaseAgent(ABC):
 
         Mutates env in-place. Returns the nono-wrapper.sh path if sandbox is
         enabled, or None to use the SDK default cli path.
+
+        All paths are passed as CLI flags via NONO_FLAGS (not --config profile
+        files, which are incompatible between nono-ts and nono CLI 0.15.0).
         """
         if not self.config.sandbox_enabled:
             return None
 
         try:
-            from trellis.core.sandbox import build_profile, build_nono_flags
-        except ImportError:
-            logger.error(
-                "sandbox_enabled=True for agent '%s' but nono-py is not installed.\n"
-                "Install it with: pip install nono-py\n"
-                "Also install the nono CLI: brew install always-further/tap/nono\n"
-                "Falling back to unsandboxed mode.",
-                self.config.name,
-            )
-            return None
+            from trellis.core.sandbox import build_nono_flags
 
-        try:
-            profile_path = build_profile(
+            nono_flags = build_nono_flags(
                 config=self.config,
                 idea_id=idea_id,
                 project_root=self.project_root,
                 blackboard_dir=self.blackboard.base_dir,
+                workspace_dir=self.project_root / "workspace",
             )
-            env["NONO_PROFILE"] = str(profile_path)
-            env["NONO_FLAGS"] = build_nono_flags(self.config, self.project_root)
+            env["NONO_FLAGS"] = nono_flags
 
             if self.config.sandbox_ssh:
                 ssh_sock = os.environ.get("SSH_AUTH_SOCK", "")
                 if ssh_sock:
                     env["SSH_AUTH_SOCK"] = ssh_sock
 
-            cli_path = self.project_root / "agents" / "nono-wrapper.sh"
-            logger.info("Sandbox enabled for agent '%s', profile: %s", self.config.name, profile_path)
+            cli_path = Path(__file__).resolve().parent.parent / "nono-wrapper.sh"
+            logger.info(
+                "Sandbox enabled for agent '%s' on '%s', flags: %s",
+                self.config.name, idea_id, nono_flags,
+            )
             return cli_path
         except Exception as e:
             logger.error(
-                "Failed to build nono sandbox profile for agent '%s': %s. "
+                "Failed to build nono sandbox flags for agent '%s': %s. "
                 "Falling back to unsandboxed mode.",
                 self.config.name, e,
             )
@@ -641,6 +637,8 @@ class BaseAgent(ABC):
             _ensure_agent_auth(agent_config, self.project_root)
 
         cli_path = self._setup_sandbox_env(env, idea_id)
+        if cli_path:
+            logger.info("Using nono wrapper at: %s (exists: %s)", cli_path, cli_path.exists())
 
         options = ClaudeAgentOptions(
             cwd=self.get_working_dir(idea_id),

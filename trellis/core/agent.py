@@ -40,59 +40,86 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Keychain credential mirroring
 # ---------------------------------------------------------------------------
-# The Claude CLI stores OAuth tokens in macOS Keychain under service name
-# "Claude Code-credentials-<hash>" where hash = sha256(CLAUDE_CONFIG_DIR)[:8].
+# The Claude CLI stores OAuth tokens in macOS Keychain. The service name
+# varies by version:
+#   - Current: "Claude Code-credentials" (no hash suffix)
+#   - Legacy:  "Claude Code-credentials-<hash>" where hash = sha256(config_dir)[:8]
 # When we point an agent at its own .claude/ dir, we need the keychain to
-# have a matching entry.  This function copies the credential from the
-# parent process's config dir to the agent's config dir (idempotent).
+# have a matching entry. This function copies the credential from the parent
+# process's keychain entry to one the agent's config dir can find.
 # ---------------------------------------------------------------------------
 
-def _keychain_service(config_dir: str) -> str:
+def _keychain_service_hashed(config_dir: str) -> str:
+    """Legacy hashed service name: Claude Code-credentials-<hash>."""
     h = hashlib.sha256(config_dir.encode()).hexdigest()[:8]
     return f"Claude Code-credentials-{h}"
 
 
+KEYCHAIN_SERVICE_PLAIN = "Claude Code-credentials"
+
+
+def _read_keychain_credential(service: str) -> str | None:
+    """Read a credential from macOS Keychain. Returns None on failure."""
+    read = subprocess.run(
+        ["security", "find-generic-password", "-s", service, "-w"],
+        capture_output=True, text=True,
+    )
+    if read.returncode == 0:
+        return read.stdout.strip()
+    return None
+
+
 def _ensure_agent_auth(agent_config: Path, project_root: Path) -> None:
-    """Mirror the parent process's keychain credential for the agent's config dir."""
+    """Mirror the parent process's keychain credential for the agent's config dir.
+
+    Tries both the plain service name ("Claude Code-credentials") and the
+    legacy hashed name. Also syncs oauthAccount metadata from the parent's
+    .claude.json to the agent's .claude.json.
+    """
     parent_dir = os.environ.get("CLAUDE_CONFIG_DIR") or str(Path.home() / ".claude")
     agent_dir = str(agent_config.resolve())
 
     if parent_dir == agent_dir:
         return  # same dir, nothing to do
 
-    parent_svc = _keychain_service(parent_dir)
-    agent_svc = _keychain_service(agent_dir)
-
-    # Read the parent's credential
-    read = subprocess.run(
-        ["security", "find-generic-password", "-s", parent_svc, "-w"],
-        capture_output=True, text=True,
-    )
-    if read.returncode != 0:
-        logger.warning("Could not read parent keychain credential (%s)", parent_svc)
+    # Try to read parent credential: plain name first, then hashed
+    credential = _read_keychain_credential(KEYCHAIN_SERVICE_PLAIN)
+    if credential is None:
+        credential = _read_keychain_credential(_keychain_service_hashed(parent_dir))
+    if credential is None:
+        logger.warning(
+            "Could not read parent keychain credential "
+            "(tried '%s' and '%s')",
+            KEYCHAIN_SERVICE_PLAIN,
+            _keychain_service_hashed(parent_dir),
+        )
         return
 
-    credential = read.stdout.strip()
-
-    # Always write/update — the parent account may have changed
-    # (e.g. user switched from with-claude-personal to with-claude-work)
+    # Write credential for the agent's config dir (both plain and hashed)
+    agent_hashed_svc = _keychain_service_hashed(agent_dir)
     account = os.environ.get("USER", "unknown")
-    write = subprocess.run(
-        [
-            "security", "add-generic-password",
-            "-s", agent_svc,
-            "-a", account,
-            "-w", credential,
-            "-U",  # update if exists
-        ],
-        capture_output=True, text=True,
-    )
-    if write.returncode != 0:
-        logger.warning("Failed to write keychain credential: %s", write.stderr.strip())
+    for svc in (KEYCHAIN_SERVICE_PLAIN, agent_hashed_svc):
+        write = subprocess.run(
+            [
+                "security", "add-generic-password",
+                "-s", svc,
+                "-a", account,
+                "-w", credential,
+                "-U",  # update if exists
+            ],
+            capture_output=True, text=True,
+        )
+        if write.returncode != 0:
+            logger.debug("Keychain write to '%s' failed: %s", svc, write.stderr.strip())
 
-    # Also ensure oauthAccount metadata exists in the agent's .claude.json
-    # so the SDK knows which account to use.
+    # Sync oauthAccount metadata from parent's .claude.json to agent's .claude.json
     parent_json = Path(parent_dir) / ".claude.json"
+    if not parent_json.exists():
+        # Also check ~/.claude/.claude.json (nested)
+        parent_json_nested = Path(parent_dir) / ".claude" / ".claude.json"
+        if parent_json_nested.exists():
+            parent_json = parent_json_nested
+
     agent_json = agent_config / ".claude.json"
     if parent_json.exists():
         try:
@@ -102,6 +129,7 @@ def _ensure_agent_auth(agent_config: Path, project_root: Path) -> None:
                 agent_data = json.loads(agent_json.read_text()) if agent_json.exists() else {}
                 if agent_data.get("oauthAccount") != oauth:
                     agent_data["oauthAccount"] = oauth
+                    agent_json.parent.mkdir(parents=True, exist_ok=True)
                     agent_json.write_text(json.dumps(agent_data, indent=2))
                     logger.info("Synced oauthAccount to %s", agent_json)
         except Exception as e:

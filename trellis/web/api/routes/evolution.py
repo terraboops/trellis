@@ -60,9 +60,7 @@ async def evolution_view(request: Request):
             }
         )
 
-    return templates.TemplateResponse(
-        "evolution.html", {"request": request, "agents": agents_data}
-    )
+    return templates.TemplateResponse("evolution.html", {"request": request, "agents": agents_data})
 
 
 @router.get("/{agent}", response_class=HTMLResponse)
@@ -81,7 +79,9 @@ async def agent_knowledge_view(request: Request, agent: str):
                     "objects": objects,
                     "count": len(objects),
                     "size": 0,
-                    "no_justification": sum(1 for o in objects if not o.get("justification", "").strip()),
+                    "no_justification": sum(
+                        1 for o in objects if not o.get("justification", "").strip()
+                    ),
                 }
             ]
             if objects
@@ -103,7 +103,10 @@ async def update_entry(agent: str, entry_id: str, body: EntryUpdate):
     knowledge_dir = settings.project_root / "agents" / agent / "knowledge"
     obj = find_by_id(knowledge_dir, entry_id)
     if not obj:
-        return HTMLResponse(f'<div class="text-[0.8rem] text-red-600">Entry {entry_id} not found</div>', status_code=404)
+        return HTMLResponse(
+            f'<div class="text-[0.8rem] text-red-600">Entry {entry_id} not found</div>',
+            status_code=404,
+        )
 
     if body.insight:
         obj["insight"] = body.insight
@@ -111,6 +114,7 @@ async def update_entry(agent: str, entry_id: str, body: EntryUpdate):
         obj["justification"] = body.justification
     obj["confidence"] = body.confidence
     from trellis.tools.knowledge_io import _now_iso
+
     obj["updated_at"] = _now_iso()
     save_object(knowledge_dir, obj)
 
@@ -124,7 +128,9 @@ async def delete_entry(agent: str, entry_id: str):
     knowledge_dir = settings.project_root / "agents" / agent / "knowledge"
     if delete_object(knowledge_dir, entry_id):
         return HTMLResponse("")  # Empty response removes the element
-    return HTMLResponse(f'<div class="text-[0.8rem] text-red-600">Entry {entry_id} not found</div>', status_code=404)
+    return HTMLResponse(
+        f'<div class="text-[0.8rem] text-red-600">Entry {entry_id} not found</div>', status_code=404
+    )
 
 
 @router.post("/curate", response_class=JSONResponse)
@@ -168,7 +174,7 @@ def _render_entry_card(agent: str, obj: dict) -> str:
 
     pred_pills = "".join(
         f'<span class="inline-block text-[0.65rem] font-mono bg-[#eee8f6] text-[#7b5ea8] px-2 py-0.5 rounded-full mr-1 mb-1">'
-        f'{p[0]} &rarr; {p[1]} &rarr; {p[2]}</span>'
+        f"{p[0]} &rarr; {p[1]} &rarr; {p[2]}</span>"
         for p in predicates
         if len(p) >= 3
     )

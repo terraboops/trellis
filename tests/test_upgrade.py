@@ -1,6 +1,3 @@
-import json
-import shutil
-from pathlib import Path
 from typer.testing import CliRunner
 from trellis.cli import app
 
@@ -34,7 +31,7 @@ def test_upgrade_preserves_claude_sessions(tmp_path, monkeypatch):
     sessions.parent.mkdir(parents=True, exist_ok=True)
     sessions.write_text("session data")
 
-    result = runner.invoke(app, ["agent", "upgrade", "--all"])
+    runner.invoke(app, ["agent", "upgrade", "--all"])
     assert sessions.read_text() == "session data"
 
 
@@ -43,7 +40,6 @@ def test_upgrade_dry_run(tmp_path, monkeypatch):
     monkeypatch.chdir(proj)
     # Modify a prompt
     prompt = proj / "agents" / "ideation" / "prompt.py"
-    original = prompt.read_text()
     prompt.write_text("modified")
 
     result = runner.invoke(app, ["agent", "upgrade", "--dry-run"])

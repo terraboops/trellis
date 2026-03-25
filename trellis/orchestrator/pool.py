@@ -11,9 +11,6 @@ import json
 import logging
 import os
 import tempfile
-import time
-from collections import defaultdict
-from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -22,9 +19,12 @@ from trellis.core.blackboard import Blackboard
 from trellis.core.lock import LockManager
 from trellis.core.registry import load_registry
 from trellis.orchestrator.job_queue import (
-    Job, JobQueue, CadenceTracker,
+    Job,
+    JobQueue,
+    CadenceTracker,
     compute_priority,
-    PRIORITY_DEFAULT, PRIORITY_EARLY_BOOST, MAX_BACKGROUND_PRIORITY,
+    PRIORITY_DEFAULT,
+    PRIORITY_EARLY_BOOST,
 )
 from trellis.orchestrator.worker import Worker, RunResult, RunStatus
 
@@ -84,6 +84,7 @@ class PoolManager:
         # State
         self.workers: list[Worker] = []
         self._running = False
+        self._job_kinds: dict[tuple[str, str], str] = {}  # (role, idea_id) -> job kind
 
         # Pool dir for snapshots
         self.pool_dir = settings.project_root / "pool"
@@ -265,9 +266,7 @@ class PoolManager:
 
     # ── Dispatch ─────────────────────────────────────────────────────
 
-    def _pop_schedulable(
-        self, queue: JobQueue, running: set[tuple[str, str]]
-    ) -> Job | None:
+    def _pop_schedulable(self, queue: JobQueue, running: set[tuple[str, str]]) -> Job | None:
         """Pop highest-priority job that passes scheduling constraints.
 
         TLA+ verified: MUST return highest-priority schedulable job.
@@ -329,24 +328,29 @@ class PoolManager:
                     serviced = status.get("last_serviced_by", {})
                     serviced[result.role] = datetime.now(timezone.utc).isoformat()
                     self.blackboard.update_status(
-                        result.idea_id, last_serviced_by=serviced,
+                        result.idea_id,
+                        last_serviced_by=serviced,
                     )
             return
 
         now = datetime.now(timezone.utc)
 
         if result.status == RunStatus.ERROR:
+            self._job_kinds.pop((result.role, result.idea_id), None)
             self.blackboard.update_status(
                 result.idea_id,
                 last_error=result.error or "Unknown error",
                 last_error_agent=result.role,
                 last_error_at=now.isoformat(),
             )
-            self._broadcast_sync("activity", {
-                "idea_id": result.idea_id,
-                "message": f"{result.role} failed: {result.error}",
-                "kind": "error",
-            })
+            self._broadcast_sync(
+                "activity",
+                {
+                    "idea_id": result.idea_id,
+                    "message": f"{result.role} failed: {result.error}",
+                    "kind": "error",
+                },
+            )
             # mark_done called by caller — pipeline_producer will re-enqueue on next scan
             return
 
@@ -361,6 +365,15 @@ class PoolManager:
             status = self.blackboard.get_status(result.idea_id)
             recommendation = status.get("phase_recommendation", "proceed")
 
+            # Determine job kind — feedback runs don't increment iter counts
+            job_kind = self._job_kinds.pop((result.role, result.idea_id), "pipeline")
+            is_feedback = job_kind == "feedback"
+
+            # Per-agent iteration tracking (matches TLA+ iterCount[idea][agent])
+            iter_counts = status.get("iter_counts", {})
+            if not is_feedback:
+                iter_counts[result.role] = iter_counts.get(result.role, 0) + 1
+
             # Update tracking
             serviced = status.get("last_serviced_by", {})
             serviced[result.role] = now.isoformat()
@@ -371,7 +384,8 @@ class PoolManager:
                 last_serviced_by=serviced,
                 stage_results=stage_results,
                 total_cost_usd=status.get("total_cost_usd", 0) + result.cost_usd,
-                iteration_count=status.get("iteration_count", 0) + 1,
+                iter_counts=iter_counts,
+                iteration_count=sum(iter_counts.values()),  # backward compat
             )
 
             # Apply gating inline
@@ -379,22 +393,30 @@ class PoolManager:
 
             if gating_mode == "human-review":
                 self.blackboard.update_status(
-                    result.idea_id, needs_human_review=True,
+                    result.idea_id,
+                    needs_human_review=True,
                     review_reason=f"Human review required after {result.role}",
                 )
                 return
             if gating_mode == "llm-decides" and recommendation == "needs_review":
                 self.blackboard.update_status(
-                    result.idea_id, needs_human_review=True,
+                    result.idea_id,
+                    needs_human_review=True,
                     review_reason=status.get("phase_reasoning", "Agent flagged uncertainty"),
                 )
                 return
-            if gating_mode == "auto" and recommendation == "iterate":
-                iteration_count = status.get("iteration_count", 0) + 1
-                if iteration_count >= MAX_ITERATE_PER_STAGE:
+            if gating_mode == "auto" and recommendation == "iterate" and not is_feedback:
+                agent_iters = iter_counts.get(result.role, 0)
+                max_iterate = (
+                    self.settings.max_iterate_per_stage
+                    if hasattr(self.settings, "max_iterate_per_stage")
+                    else MAX_ITERATE_PER_STAGE
+                )
+                if agent_iters >= max_iterate:
                     self.blackboard.update_status(
-                        result.idea_id, needs_human_review=True,
-                        review_reason=f"{result.role} hit max iterations ({MAX_ITERATE_PER_STAGE})",
+                        result.idea_id,
+                        needs_human_review=True,
+                        review_reason=f"{result.role} hit max iterations ({max_iterate})",
                     )
                     return
                 # pipeline_producer will see "iterate" and re-enqueue
@@ -405,63 +427,139 @@ class PoolManager:
 
             # "proceed" — advance phase and check completion
             # TLA+ verified: release MUST be atomic with last completion
+            # Reset proceeding agent's iter count (matches TLA+ iterCount'[idea][agent] = 0)
+            iter_counts = status.get("iter_counts", {})
+            iter_counts[result.role] = 0
+            self.blackboard.update_status(
+                result.idea_id, iter_counts=iter_counts, iteration_count=sum(iter_counts.values())
+            )
+
             next_agent = self.blackboard.next_agent(result.idea_id)
             if next_agent:
                 old_phase = status.get("phase", "submitted")
                 if old_phase != next_agent:
                     history = status.get("phase_history", [])
-                    history.append({
-                        "from": old_phase, "to": next_agent,
-                        "at": now.isoformat(),
-                    })
-                    self.blackboard.update_status(
-                        result.idea_id, phase=next_agent, phase_history=history,
+                    history.append(
+                        {
+                            "from": old_phase,
+                            "to": next_agent,
+                            "at": now.isoformat(),
+                        }
                     )
-                    logger.info("Idea '%s' advanced: %s -> %s", result.idea_id, old_phase, next_agent)
+                    self.blackboard.update_status(
+                        result.idea_id,
+                        phase=next_agent,
+                        phase_history=history,
+                    )
+                    logger.info(
+                        "Idea '%s' advanced: %s -> %s", result.idea_id, old_phase, next_agent
+                    )
             elif self.blackboard.is_ready(result.idea_id):
                 self._handle_release(result.idea_id)
 
         # Broadcast completion
-        self._broadcast_sync("worker_done", {
-            "worker_id": result.role,
-            "idea_id": result.idea_id,
-            "status": result.status.value,
-            "duration": result.duration_seconds,
-        })
+        self._broadcast_sync(
+            "worker_done",
+            {
+                "worker_id": result.role,
+                "idea_id": result.idea_id,
+                "status": result.status.value,
+                "duration": result.duration_seconds,
+            },
+        )
 
     def _handle_release(self, idea_id: str) -> None:
-        """Release an idea atomically after last pipeline agent completes."""
+        """Release an idea atomically after last pipeline agent completes.
+
+        Enforces quality gate: if priority_score < min_quality_score,
+        the idea loops back for refinement instead of releasing.
+        """
         status = self.blackboard.get_status(idea_id)
         now = datetime.now(timezone.utc)
         old_phase = status.get("phase", "submitted")
         history = status.get("phase_history", [])
         prior_releases = sum(1 for e in history if e.get("to") == "released")
-        history.append({
-            "from": old_phase, "to": "released", "at": now.isoformat(),
-        })
-        max_refinement_cycles = status.get("max_refinement_cycles", 1)
-        if max_refinement_cycles == 0 or prior_releases < max_refinement_cycles:
+        history.append(
+            {
+                "from": old_phase,
+                "to": "released",
+                "at": now.isoformat(),
+            }
+        )
+        max_refinement_cycles = status.get(
+            "max_refinement_cycles",
+            self.settings.max_refinement_cycles,
+        )
+        at_cycle_cap = max_refinement_cycles > 0 and prior_releases >= max_refinement_cycles
+
+        # Quality gate check
+        min_score = self.settings.min_quality_score
+        score = status.get("priority_score", 0)
+        quality_ok = min_score <= 0 or score >= min_score
+
+        if not quality_ok and at_cycle_cap:
+            # Quality still low after all refinement cycles — needs human decision
             self.blackboard.update_status(
-                idea_id, phase="submitted", phase_history=history, stage_results={},
+                idea_id,
+                needs_human_review=True,
+                phase_history=history,
+                review_reason=f"Quality score {score:.1f} below threshold {min_score:.1f} after {prior_releases} refinement cycles",
             )
             logger.info(
-                "Idea '%s' completed pipeline (release %d/%d), looping for refinement",
-                idea_id, prior_releases + 1, max_refinement_cycles,
+                "Idea '%s' failed quality gate (%.1f < %.1f) at cycle cap — human review",
+                idea_id,
+                score,
+                min_score,
             )
-        else:
-            self.blackboard.update_status(
-                idea_id, phase="released", phase_history=history,
-            )
-            logger.info(
-                "Idea '%s' reached max refinement cycles (%d), marking terminal",
-                idea_id, max_refinement_cycles,
-            )
+            return
+
+        if not quality_ok or not at_cycle_cap:
+            # Loop back for refinement (quality-driven or normal refinement)
+            if (
+                max_refinement_cycles == 0
+                or prior_releases < max_refinement_cycles
+                or not quality_ok
+            ):
+                serviced = status.get("last_serviced_by", {})
+                pipeline = self.blackboard.get_pipeline(idea_id)
+                for role in pipeline.get("post_ready", []):
+                    serviced.pop(role, None)
+                reason = "quality gate" if not quality_ok else "refinement"
+                self.blackboard.update_status(
+                    idea_id,
+                    phase="submitted",
+                    phase_history=history,
+                    stage_results={},
+                    last_serviced_by=serviced,
+                )
+                logger.info(
+                    "Idea '%s' looping for %s (release %d/%s, score %.1f)",
+                    idea_id,
+                    reason,
+                    prior_releases + 1,
+                    max_refinement_cycles or "∞",
+                    score,
+                )
+                return
+
+        # Terminal "released" — quality is OK and at cycle cap
+        self.blackboard.update_status(
+            idea_id,
+            phase="released",
+            phase_history=history,
+        )
+        logger.info(
+            "Idea '%s' reached max refinement cycles (%d), marking terminal",
+            idea_id,
+            max_refinement_cycles,
+        )
 
     @staticmethod
     def _broadcast_sync(event_type: str, data: dict) -> None:
         """Best-effort broadcast — fire and forget."""
         try:
             from trellis.web.api.websocket import broadcast_event
+
             asyncio.get_event_loop().create_task(broadcast_event(event_type, data))
         except Exception:
             pass
@@ -478,13 +576,16 @@ class PoolManager:
                 logger.error(
                     "Another pool is running (PID %d). Lock file: %s\n"
                     "If this is stale, remove it: rm %s",
-                    pid, lock_path, lock_path,
+                    pid,
+                    lock_path,
+                    lock_path,
                 )
                 return False
             except ProcessLookupError:
                 logger.warning(
                     "Stale pool lock found (PID %d is dead). Cleaning up: %s",
-                    pid, lock_path,
+                    pid,
+                    lock_path,
                 )
                 lock_path.unlink(missing_ok=True)
             except (OSError, ValueError) as e:
@@ -506,7 +607,9 @@ class PoolManager:
                 else:
                     logger.warning(
                         "Pool lock held by different PID %d (we are %d), not releasing: %s",
-                        pid, os.getpid(), lock_path,
+                        pid,
+                        os.getpid(),
+                        lock_path,
                     )
             except (OSError, ValueError):
                 lock_path.unlink(missing_ok=True)
@@ -514,23 +617,32 @@ class PoolManager:
 
     # ── Snapshot ─────────────────────────────────────────────────────
 
-    def _snapshot(self, queue: JobQueue | None = None,
-                  cadence_trackers: dict[str, CadenceTracker] | None = None) -> None:
+    def _snapshot(
+        self,
+        queue: JobQueue | None = None,
+        cadence_trackers: dict[str, CadenceTracker] | None = None,
+    ) -> None:
         """Write pool state to filesystem for web UI."""
         worker_data = []
         for w in self.workers:
             if w.is_idle:
                 worker_data.append({"id": w.worker_id, "status": "idle"})
             else:
-                elapsed = (datetime.now(timezone.utc) - w.started_at).total_seconds() if w.started_at else 0
-                worker_data.append({
-                    "id": w.worker_id,
-                    "status": "active",
-                    "role": w.current_role,
-                    "idea": w.current_idea,
-                    "started_at": w.started_at.isoformat() if w.started_at else None,
-                    "elapsed_seconds": elapsed,
-                })
+                elapsed = (
+                    (datetime.now(timezone.utc) - w.started_at).total_seconds()
+                    if w.started_at
+                    else 0
+                )
+                worker_data.append(
+                    {
+                        "id": w.worker_id,
+                        "status": "active",
+                        "role": w.current_role,
+                        "idea": w.current_idea,
+                        "started_at": w.started_at.isoformat() if w.started_at else None,
+                        "elapsed_seconds": elapsed,
+                    }
+                )
 
         cadence_data = {}
         if cadence_trackers:
@@ -585,7 +697,9 @@ class PoolManager:
         from trellis.comms.notifications import NotificationDispatcher
         from trellis.comms.telegram import TelegramNotifier
 
-        telegram = TelegramNotifier(self.settings.telegram_bot_token, self.settings.telegram_chat_id)
+        telegram = TelegramNotifier(
+            self.settings.telegram_bot_token, self.settings.telegram_chat_id
+        )
         dispatcher = NotificationDispatcher(telegram)
         factory = AgentFactory(
             registry=self.registry,
@@ -645,7 +759,8 @@ class PoolManager:
                     continue
                 job = self._pop_schedulable(queue, running)
                 if job is None:
-                    break
+                    continue
+                self._job_kinds[(job.role, job.idea_id)] = job.kind
                 task = asyncio.create_task(
                     self._run_worker(worker, job),
                     name=f"worker-{worker.worker_id}-{job.role}-{job.idea_id}",
@@ -670,6 +785,7 @@ class PoolManager:
         """Re-score priorities for all active ideas."""
         try:
             from trellis.orchestrator.orchestrator import Orchestrator
+
             orchestrator = Orchestrator.__new__(Orchestrator)
             orchestrator.blackboard = self.blackboard
             orchestrator.settings = self.settings

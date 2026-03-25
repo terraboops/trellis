@@ -1,0 +1,56 @@
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.9.10
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: local
+    hooks:
+      - id: smoke-tests
+        name: smoke tests (template parsing, imports)
+        entry: uv run --python 3.13 python -m pytest tests/ -m smoke -x -q --no-header --tb=short
+        language: system
+        pass_filenames: false
+        types: [python]
+        stages: [pre-commit]
+
+      - id: unit-tests
+        name: unit tests (quality gate, scheduling logic)
+        entry: uv run --python 3.13 python -m pytest tests/ -m unit -x -q --no-header --tb=short
+        language: system
+        pass_filenames: false
+        types: [python]
+        stages: [pre-commit]
+
+      - id: regression-tests
+        name: regression tests (release cap, iterate cap, dismiss_review)
+        entry: uv run --python 3.13 python -m pytest tests/ -m regression -x -q --no-header --tb=short
+        language: system
+        pass_filenames: false
+        types: [python]
+        stages: [pre-commit]
+
+      - id: integration-tests
+        name: integration tests (config overlay, settings persistence)
+        entry: uv run --python 3.13 python -m pytest tests/ -m integration -x -q --no-header --tb=short
+        language: system
+        pass_filenames: false
+        types: [python]
+        stages: [pre-commit]
+
+      - id: e2e-tests
+        name: e2e tests (ASGI route round-trips)
+        entry: uv run --python 3.13 python -m pytest tests/ -m e2e -x -q --no-header --tb=short
+        language: system
+        pass_filenames: false
+        types: [python]
+        stages: [pre-commit]
+
+      - id: init-serve-test
+        name: init + serve (full lifecycle)
+        entry: uv run --python 3.13 python -m pytest tests/test_init_serve.py -x -q --no-header --tb=short
+        language: system
+        pass_filenames: false
+        stages: [pre-commit]

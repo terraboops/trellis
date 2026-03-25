@@ -56,8 +56,9 @@ def _load_pool_running() -> set[tuple[str, str]]:
         return set()
 
 
-def _compute_scheduling(bb: Blackboard, idea: dict, roles: list[str],
-                        running: set[tuple[str, str]]) -> list[dict]:
+def _compute_scheduling(
+    bb: Blackboard, idea: dict, roles: list[str], running: set[tuple[str, str]]
+) -> list[dict]:
     """Compute which roles an idea is eligible for.
 
     Returns a list of dicts: {role, reason, running}
@@ -76,29 +77,35 @@ def _compute_scheduling(bb: Blackboard, idea: dict, roles: list[str],
     if not is_ready:
         next_role = bb.next_agent(idea_id)
         if next_role and next_role in roles:
-            eligible.append({
-                "role": next_role,
-                "reason": "next agent",
-                "running": (next_role, idea_id) in running,
-            })
+            eligible.append(
+                {
+                    "role": next_role,
+                    "reason": "next agent",
+                    "running": (next_role, idea_id) in running,
+                }
+            )
     else:
         for post_role in bb.pending_post_ready(idea_id):
             if post_role in roles:
-                eligible.append({
-                    "role": post_role,
-                    "reason": "post-ready",
-                    "running": (post_role, idea_id) in running,
-                })
+                eligible.append(
+                    {
+                        "role": post_role,
+                        "reason": "post-ready",
+                        "running": (post_role, idea_id) in running,
+                    }
+                )
 
     for role in roles:
         if any(e["role"] == role for e in eligible):
             continue
         if bb.has_pending_feedback(idea_id, role):
-            eligible.append({
-                "role": role,
-                "reason": "feedback",
-                "running": (role, idea_id) in running,
-            })
+            eligible.append(
+                {
+                    "role": role,
+                    "reason": "feedback",
+                    "running": (role, idea_id) in running,
+                }
+            )
 
     return eligible
 
@@ -127,8 +134,7 @@ async def home(request: Request):
         pipeline = bb.get_pipeline(idea_id)
         post_ready_set = set(pipeline.get("post_ready", []))
         background_set = {
-            a.name for a in registry.agents.values()
-            if a.status == "active" and a.phase == "*"
+            a.name for a in registry.agents.values() if a.status == "active" and a.phase == "*"
         }
         idea_aux_roles = [r for r in auxiliary_roles if r in post_ready_set or r in background_set]
         for role in idea_aux_roles:
@@ -136,11 +142,13 @@ async def home(request: Request):
             role_dir = idea_dir / role
             has_run = role_file.exists() or (role_dir.exists() and any(role_dir.iterdir()))
             is_running = (role, idea_id) in pool_running
-            aux_status.append({
-                "role": role,
-                "done": has_run and not is_running,
-                "pending": is_running,
-            })
+            aux_status.append(
+                {
+                    "role": role,
+                    "done": has_run and not is_running,
+                    "pending": is_running,
+                }
+            )
         status["_auxiliary"] = aux_status
         ideas.append(status)
     ideas.sort(key=lambda x: x.get("priority_score", 0), reverse=True)
@@ -170,6 +178,7 @@ async def create_idea(
     except FileExistsError:
         # Idea with this slug already exists — redirect to it
         from trellis.core.blackboard import slugify
+
         return RedirectResponse(url=f"/ideas/{slugify(title)}", status_code=303)
     presets = _load_presets()
     preset_data = presets.get(preset, presets.get("full-pipeline", {}))
@@ -210,14 +219,22 @@ async def idea_detail(request: Request, idea_id: str):
             continue  # skip agent-logs/ directory
         if f.name in ("status.json", "feedback.json", "questions.json", "artifact-manifest.json"):
             continue
-        content = f.read_text()
+        try:
+            content = f.read_text()
+        except UnicodeDecodeError:
+            continue
         is_empty = len(content.strip().split("\n")) <= 1
-        raw_artifacts.append((f.name, {
-            "content": content,
-            "is_markdown": f.suffix == ".md",
-            "is_empty": is_empty,
-            "title": _extract_title(content, f.name),
-        }))
+        raw_artifacts.append(
+            (
+                f.name,
+                {
+                    "content": content,
+                    "is_markdown": f.suffix == ".md",
+                    "is_empty": is_empty,
+                    "title": _extract_title(content, f.name),
+                },
+            )
+        )
 
     # Also pick up HTML artifacts from workspace
     workspace_dir = get_settings().project_root / "workspace" / idea_id
@@ -225,12 +242,17 @@ async def idea_detail(request: Request, idea_id: str):
         for f in sorted(workspace_dir.rglob("*.html")):
             rel = f.relative_to(workspace_dir)
             label = f"workspace/{rel}"
-            raw_artifacts.append((label, {
-                "content": f.read_text(),
-                "is_markdown": False,
-                "is_empty": False,
-                "title": str(rel).rsplit(".", 1)[0].replace("-", " ").title(),
-            }))
+            raw_artifacts.append(
+                (
+                    label,
+                    {
+                        "content": f.read_text(),
+                        "is_markdown": False,
+                        "is_empty": False,
+                        "title": str(rel).rsplit(".", 1)[0].replace("-", " ").title(),
+                    },
+                )
+            )
 
     # Sort: idea.md first, then alphabetically
     raw_artifacts.sort(key=lambda x: (0 if x[0] == "idea.md" else 1, x[0]))
@@ -269,6 +291,9 @@ async def idea_detail(request: Request, idea_id: str):
     feedback_entries = _load_feedback(bb, idea_id)
     question_entries = _load_questions(bb, idea_id)
 
+    # Agents that have serviced this idea (for feedback modal)
+    serviced_agents = sorted(status.get("last_serviced_by", {}).keys())
+
     return templates.TemplateResponse(
         "idea_detail.html",
         {
@@ -284,6 +309,7 @@ async def idea_detail(request: Request, idea_id: str):
             "registered_roles": sorted(registered_roles),
             "feedback_entries": feedback_entries,
             "question_entries": question_entries,
+            "serviced_agents": serviced_agents,
         },
     )
 
@@ -301,13 +327,16 @@ async def idea_action(
 
     if action == "kill":
         from trellis.orchestrator.orchestrator import Orchestrator
+
         orch = Orchestrator(settings)
         await orch.kill(idea_id)
         if kill_reason.strip():
             bb.update_status(idea_id, kill_reason=kill_reason.strip())
     elif action == "resume":
+
         async def _run():
             from trellis.orchestrator.orchestrator import Orchestrator
+
             orch = Orchestrator(settings)
             await orch.resume(idea_id)
 
@@ -315,21 +344,37 @@ async def idea_action(
     elif action == "refine":
         if refine_feedback.strip():
             bb.append_file(
-                idea_id, "idea.md",
+                idea_id,
+                "idea.md",
                 f"\n\n---\n\n## Refinement Feedback\n\n{refine_feedback.strip()}\n",
             )
 
         async def _run():
             from trellis.orchestrator.orchestrator import Orchestrator
+
             orch = Orchestrator(settings)
             from trellis.core.phase import Phase
+
             # Loop back to ideation — agents detect refinement mode automatically
             await orch._transition(idea_id, Phase.IDEATION)
             await orch.run_continuous_for_idea(idea_id)
 
         asyncio.create_task(_run())
     elif action == "dismiss_review":
-        bb.update_status(idea_id, needs_human_review=False, review_reason=None)
+        max_iterate = get_settings().max_iterate_per_stage
+        status = bb.get_status(idea_id)
+        iter_counts = status.get("iter_counts", {})
+        # Reset only agents that hit the cap — others keep their counts
+        iter_counts = {
+            agent: 0 if count >= max_iterate else count for agent, count in iter_counts.items()
+        }
+        bb.update_status(
+            idea_id,
+            needs_human_review=False,
+            review_reason=None,
+            iter_counts=iter_counts,
+            iteration_count=sum(iter_counts.values()),
+        )
     elif action == "delete":
         status = bb.get_status(idea_id)
         if status.get("phase") == "killed":
@@ -337,12 +382,14 @@ async def idea_action(
             return RedirectResponse(url="/", status_code=303)
     elif action == "resurrect":
         from trellis.core.phase import Phase
+
         bb.set_phase(idea_id, Phase.SUBMITTED)
         bb.update_status(idea_id, kill_reason=None)
         if resurrect_context.strip():
             # Append context to idea.md so agents see it on next run
             bb.append_file(
-                idea_id, "idea.md",
+                idea_id,
+                "idea.md",
                 f"\n\n---\n\n## Additional Context (Resurrected)\n\n{resurrect_context.strip()}\n",
             )
 
@@ -364,7 +411,14 @@ async def update_pipeline(
     # Validate stage names against registry and known pipeline stage names
     registered = _get_registered_roles()
     # Also accept short names used in presets (e.g. "competitive" vs "competitive-watcher")
-    pipeline_known = {"ideation", "implementation", "validation", "release", "competitive", "research"}
+    pipeline_known = {
+        "ideation",
+        "implementation",
+        "validation",
+        "release",
+        "competitive",
+        "research",
+    }
     allowed = registered | pipeline_known
     stage_list = [s for s in stage_list if s in allowed]
     post_ready_list = [s for s in post_ready_list if s in allowed]
@@ -394,13 +448,15 @@ async def idea_agent_logs(request: Request, idea_id: str):
         for f in sorted(log_dir.iterdir(), reverse=True):
             if f.suffix == ".json":
                 data = json.loads(f.read_text())
-                logs.append({
-                    "filename": f.name,
-                    "agent": data.get("agent", "unknown"),
-                    "timestamp": data.get("timestamp", ""),
-                    "model": data.get("model", ""),
-                    "transcript_len": len(data.get("transcript", [])),
-                })
+                logs.append(
+                    {
+                        "filename": f.name,
+                        "agent": data.get("agent", "unknown"),
+                        "timestamp": data.get("timestamp", ""),
+                        "model": data.get("model", ""),
+                        "transcript_len": len(data.get("transcript", [])),
+                    }
+                )
     return templates.TemplateResponse(
         "idea_logs.html",
         {"request": request, "status": status, "logs": logs, "idea_id": idea_id},
@@ -417,7 +473,13 @@ async def idea_agent_log_detail(request: Request, idea_id: str, log_filename: st
     log_data = json.loads(log_file.read_text())
     return templates.TemplateResponse(
         "idea_log_detail.html",
-        {"request": request, "status": status, "log": log_data, "idea_id": idea_id, "log_filename": log_filename},
+        {
+            "request": request,
+            "status": status,
+            "log": log_data,
+            "idea_id": idea_id,
+            "log_filename": log_filename,
+        },
     )
 
 
@@ -511,7 +573,10 @@ def _build_artifact_context(bb: Blackboard, idea_id: str) -> str:
     for f in sorted(idea_dir.iterdir()):
         if f.is_dir() or f.name in ("status.json", "feedback.json", "questions.json"):
             continue
-        content = f.read_text()
+        try:
+            content = f.read_text()
+        except UnicodeDecodeError:
+            continue
         if not content.strip():
             continue
         # Truncate very large files
@@ -522,7 +587,9 @@ def _build_artifact_context(bb: Blackboard, idea_id: str) -> str:
 
 
 async def _generate_multi_perspective_answer(
-    question: str, artifact_context: str, feedback_context: str,
+    question: str,
+    artifact_context: str,
+    feedback_context: str,
 ) -> dict:
     """Call Claude Agent SDK to generate a multi-perspective answer."""
     from claude_agent_sdk import query, ClaudeAgentOptions, ResultMessage
@@ -590,7 +657,9 @@ async def submit_question(idea_id: str, question: str = Form("")):
 
     try:
         result = await _generate_multi_perspective_answer(
-            question.strip(), artifact_context, feedback_context,
+            question.strip(),
+            artifact_context,
+            feedback_context,
         )
     except Exception as e:
         return JSONResponse(

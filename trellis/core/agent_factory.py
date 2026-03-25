@@ -11,7 +11,7 @@ from claude_agent_sdk import AgentDefinition
 from trellis.comms.notifications import NotificationDispatcher
 from trellis.core.agent import BaseAgent
 from trellis.core.blackboard import Blackboard
-from trellis.core.registry import AgentConfig, Registry
+from trellis.core.registry import Registry
 
 logger = logging.getLogger(__name__)
 
@@ -76,19 +76,19 @@ class AgentFactory:
             filenames.append(role_to_alt[role])
 
         for search_dir in search_dirs:
-          for filename in filenames:
-            prompt_file = search_dir / f"{filename}.py"
-            if prompt_file.exists():
-                # Load the module and extract SYSTEM_PROMPT
-                spec = importlib.util.spec_from_file_location(f"_prompt_{role}", prompt_file)
-                if spec and spec.loader:
-                    mod = importlib.util.module_from_spec(spec)
-                    try:
-                        spec.loader.exec_module(mod)
-                        if hasattr(mod, "SYSTEM_PROMPT"):
-                            return mod.SYSTEM_PROMPT
-                    except Exception as e:
-                        logger.warning("Failed to load prompt from %s: %s", prompt_file, e)
+            for filename in filenames:
+                prompt_file = search_dir / f"{filename}.py"
+                if prompt_file.exists():
+                    # Load the module and extract SYSTEM_PROMPT
+                    spec = importlib.util.spec_from_file_location(f"_prompt_{role}", prompt_file)
+                    if spec and spec.loader:
+                        mod = importlib.util.module_from_spec(spec)
+                        try:
+                            spec.loader.exec_module(mod)
+                            if hasattr(mod, "SYSTEM_PROMPT"):
+                                return mod.SYSTEM_PROMPT
+                        except Exception as e:
+                            logger.warning("Failed to load prompt from %s: %s", prompt_file, e)
 
         return None
 
@@ -123,9 +123,7 @@ class AgentFactory:
             system_prompt=system_prompt,
         )
 
-    def create_custom_agent(
-        self, role: str, idea_context: dict
-    ) -> AgentDefinition:
+    def create_custom_agent(self, role: str, idea_context: dict) -> AgentDefinition:
         """Create a specialized AgentDefinition at runtime for subagent use."""
         prompt = self._generate_prompt(role, idea_context)
         tools = self._tools_for_role(role)

@@ -1,8 +1,6 @@
 """Tests for Worker timeout handling and agent execution."""
 
-import asyncio
-from datetime import datetime, timezone, timedelta
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -14,9 +12,9 @@ from trellis.orchestrator.worker import Worker, RunResult, RunStatus
 def mock_factory():
     factory = MagicMock()
     mock_agent = AsyncMock()
-    mock_agent.run = AsyncMock(return_value=MagicMock(
-        success=True, cost_usd=0.25, error=None, output="Done"
-    ))
+    mock_agent.run = AsyncMock(
+        return_value=MagicMock(success=True, cost_usd=0.25, error=None, output="Done")
+    )
     factory.create_agent.return_value = mock_agent
     return factory
 
@@ -76,7 +74,9 @@ async def test_execute_acquires_and_releases_lock(worker, mock_factory):
 
     await worker.execute(_make_job(), timeout_seconds=1800)
 
-    worker.lock_manager.acquire.assert_called_once_with("pool", "ideation:test-idea", executor="worker-1")
+    worker.lock_manager.acquire.assert_called_once_with(
+        "pool", "ideation:test-idea", executor="worker-1"
+    )
     worker.lock_manager.release.assert_called_once_with("pool", "ideation:test-idea")
 
 

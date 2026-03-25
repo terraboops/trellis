@@ -24,12 +24,8 @@ class NotificationDispatcher:
     ) -> str:
         return await self.telegram.ask_human(question, options, timeout_seconds)
 
-    async def notify_phase_transition(
-        self, idea_id: str, from_phase: str, to_phase: str
-    ) -> None:
-        await self.notify(
-            f"[Phase] *{idea_id}*: `{from_phase}` → `{to_phase}`"
-        )
+    async def notify_phase_transition(self, idea_id: str, from_phase: str, to_phase: str) -> None:
+        await self.notify(f"[Phase] *{idea_id}*: `{from_phase}` → `{to_phase}`")
 
     async def notify_error(self, idea_id: str, error: str) -> None:
         await self.notify(f"❌ *{idea_id}* error:\n```\n{error}\n```")

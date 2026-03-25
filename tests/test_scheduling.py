@@ -1,17 +1,16 @@
 """Tests for the redesigned pool scheduler: JobQueue, CadenceTracker, PoolManager."""
 
-import json
-from collections import defaultdict
 from datetime import datetime, timezone, timedelta
-from pathlib import Path
-from unittest.mock import MagicMock, AsyncMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
-from trellis.core.registry import AgentConfig, Registry
 from trellis.orchestrator.job_queue import (
-    Job, JobQueue, CadenceTracker, compute_priority,
-    PRIORITY_DEFAULT, PRIORITY_EARLY_BOOST, MAX_BACKGROUND_PRIORITY,
+    Job,
+    JobQueue,
+    CadenceTracker,
+    compute_priority,
+    MAX_BACKGROUND_PRIORITY,
     FEEDBACK_PRIORITY_FACTOR,
 )
 from trellis.orchestrator.pool import PoolManager, can_schedule
@@ -19,6 +18,7 @@ from trellis.orchestrator.worker import RunResult, RunStatus
 
 
 # ── JobQueue tests ───────────────────────────────────────────────────
+
 
 class TestJobQueue:
     def test_enqueue_and_pop_priority_order(self):
@@ -78,6 +78,7 @@ class TestJobQueue:
 
 
 # ── CadenceTracker tests ────────────────────────────────────────────
+
 
 class TestCadenceTracker:
     def test_never_run_is_at_deadline(self):
@@ -147,6 +148,7 @@ class TestCadenceTracker:
 
 # ── compute_priority tests ───────────────────────────────────────────
 
+
 class TestComputePriority:
     def test_pipeline_uses_idea_priority(self):
         assert compute_priority("pipeline", idea_priority=7.0) == 7.0
@@ -166,6 +168,7 @@ class TestComputePriority:
 
 
 # ── can_schedule tests ───────────────────────────────────────────────
+
 
 class TestCanSchedule:
     def test_different_groups_can_overlap(self):
@@ -227,17 +230,25 @@ class TestCanSchedule:
 
 # ── PoolManager._handle_result tests ────────────────────────────────
 
+
 def _make_pool(tmp_path):
     """Build a minimal PoolManager for _handle_result tests."""
     pm = PoolManager.__new__(PoolManager)
     pm.settings = MagicMock(
-        pool_size=2, job_timeout_minutes=60,
-        producer_interval_seconds=10, project_root=tmp_path,
-        telegram_bot_token="test", telegram_chat_id="test",
+        pool_size=2,
+        job_timeout_minutes=60,
+        producer_interval_seconds=10,
+        project_root=tmp_path,
+        telegram_bot_token="test",
+        telegram_chat_id="test",
+        max_iterate_per_stage=3,
+        max_refinement_cycles=1,
+        min_quality_score=0.0,
     )
     pm.blackboard = MagicMock()
     pm.lock_manager = MagicMock()
     pm.roles = ["ideation", "implementation", "validation", "release"]
+
     # Pipeline agents: no cadence, no phase="*"
     def _get_agent(name):
         m = MagicMock()
@@ -245,11 +256,13 @@ def _make_pool(tmp_path):
         m.phase = name  # pipeline agents have phase matching their name
         m.max_concurrent = 1
         return m
+
     pm.registry = MagicMock()
     pm.registry.get_agent.side_effect = _get_agent
     pm.pool_dir = tmp_path / "pool"
     pm.pool_dir.mkdir(exist_ok=True)
     pm.workers = []
+    pm._job_kinds = {}
     return pm
 
 
@@ -286,8 +299,13 @@ async def test_handle_result_release_terminates_at_cap(tmp_path):
     pm.blackboard.is_ready.return_value = True
     pm.blackboard.get_gating_mode.return_value = "auto"
 
-    result = RunResult(status=RunStatus.OK, role="release", idea_id="test-idea",
-                       duration_seconds=10.0, cost_usd=0.05)
+    result = RunResult(
+        status=RunStatus.OK,
+        role="release",
+        idea_id="test-idea",
+        duration_seconds=10.0,
+        cost_usd=0.05,
+    )
 
     with patch("trellis.orchestrator.pool.PoolManager._broadcast_sync"):
         await pm._handle_result(result, queue)
@@ -310,8 +328,13 @@ async def test_handle_result_release_loops_under_cap(tmp_path):
     pm.blackboard.is_ready.return_value = True
     pm.blackboard.get_gating_mode.return_value = "auto"
 
-    result = RunResult(status=RunStatus.OK, role="release", idea_id="test-idea",
-                       duration_seconds=10.0, cost_usd=0.05)
+    result = RunResult(
+        status=RunStatus.OK,
+        role="release",
+        idea_id="test-idea",
+        duration_seconds=10.0,
+        cost_usd=0.05,
+    )
 
     with patch("trellis.orchestrator.pool.PoolManager._broadcast_sync"):
         await pm._handle_result(result, queue)
@@ -330,12 +353,15 @@ async def test_handle_result_error_allows_retry(tmp_path):
     queue = JobQueue()
 
     pm.blackboard.get_status.return_value = {
-        "id": "test-idea", "phase": "ideation",
-        "last_serviced_by": {}, "stage_results": {},
+        "id": "test-idea",
+        "phase": "ideation",
+        "last_serviced_by": {},
+        "stage_results": {},
     }
 
-    result = RunResult(status=RunStatus.ERROR, role="ideation", idea_id="test-idea",
-                       error="agent crashed")
+    result = RunResult(
+        status=RunStatus.ERROR, role="ideation", idea_id="test-idea", error="agent crashed"
+    )
 
     with patch("trellis.orchestrator.pool.PoolManager._broadcast_sync"):
         await pm._handle_result(result, queue)
@@ -352,7 +378,8 @@ async def test_handle_result_advances_phase(tmp_path):
     queue = JobQueue()
 
     pm.blackboard.get_status.return_value = {
-        "id": "test-idea", "phase": "ideation",
+        "id": "test-idea",
+        "phase": "ideation",
         "phase_history": [],
         "last_serviced_by": {},
         "total_cost_usd": 0.0,
@@ -364,8 +391,13 @@ async def test_handle_result_advances_phase(tmp_path):
     pm.blackboard.is_ready.return_value = False
     pm.blackboard.get_gating_mode.return_value = "auto"
 
-    result = RunResult(status=RunStatus.OK, role="ideation", idea_id="test-idea",
-                       duration_seconds=60.0, cost_usd=0.10)
+    result = RunResult(
+        status=RunStatus.OK,
+        role="ideation",
+        idea_id="test-idea",
+        duration_seconds=60.0,
+        cost_usd=0.10,
+    )
 
     with patch("trellis.orchestrator.pool.PoolManager._broadcast_sync"):
         await pm._handle_result(result, queue)
@@ -382,7 +414,8 @@ async def test_handle_result_kill_recommendation(tmp_path):
     queue = JobQueue()
 
     pm.blackboard.get_status.return_value = {
-        "id": "test-idea", "phase": "ideation",
+        "id": "test-idea",
+        "phase": "ideation",
         "phase_history": [],
         "last_serviced_by": {},
         "total_cost_usd": 0.0,
@@ -392,8 +425,13 @@ async def test_handle_result_kill_recommendation(tmp_path):
     }
     pm.blackboard.get_gating_mode.return_value = "auto"
 
-    result = RunResult(status=RunStatus.OK, role="ideation", idea_id="test-idea",
-                       duration_seconds=30.0, cost_usd=0.05)
+    result = RunResult(
+        status=RunStatus.OK,
+        role="ideation",
+        idea_id="test-idea",
+        duration_seconds=30.0,
+        cost_usd=0.05,
+    )
 
     with patch("trellis.orchestrator.pool.PoolManager._broadcast_sync"):
         await pm._handle_result(result, queue)
@@ -410,7 +448,8 @@ async def test_handle_result_human_review_gating(tmp_path):
     queue = JobQueue()
 
     pm.blackboard.get_status.return_value = {
-        "id": "test-idea", "phase": "ideation",
+        "id": "test-idea",
+        "phase": "ideation",
         "phase_history": [],
         "last_serviced_by": {},
         "total_cost_usd": 0.0,
@@ -420,8 +459,13 @@ async def test_handle_result_human_review_gating(tmp_path):
     }
     pm.blackboard.get_gating_mode.return_value = "human-review"
 
-    result = RunResult(status=RunStatus.OK, role="ideation", idea_id="test-idea",
-                       duration_seconds=30.0, cost_usd=0.05)
+    result = RunResult(
+        status=RunStatus.OK,
+        role="ideation",
+        idea_id="test-idea",
+        duration_seconds=30.0,
+        cost_usd=0.05,
+    )
 
     with patch("trellis.orchestrator.pool.PoolManager._broadcast_sync"):
         await pm._handle_result(result, queue)
@@ -433,14 +477,17 @@ async def test_handle_result_human_review_gating(tmp_path):
 
 # ── Pipeline producer tests ──────────────────────────────────────────
 
+
 def test_pipeline_producer_enqueues_next_agent(tmp_path):
     """Pipeline producer creates jobs for ideas needing their next agent."""
     pm = _make_pool(tmp_path)
     pm.blackboard.list_ideas.return_value = ["idea-a"]
     pm.blackboard.get_status.return_value = {
-        "id": "idea-a", "phase": "submitted",
+        "id": "idea-a",
+        "phase": "submitted",
         "priority_score": 7.0,
-        "last_serviced_by": {}, "stage_results": {},
+        "last_serviced_by": {},
+        "stage_results": {},
         "pipeline": {
             "agents": ["ideation", "implementation"],
             "parallel_groups": [["ideation", "implementation"]],
@@ -473,7 +520,8 @@ def test_pipeline_producer_skips_terminal(tmp_path):
     pm = _make_pool(tmp_path)
     pm.blackboard.list_ideas.return_value = ["idea-a"]
     pm.blackboard.get_status.return_value = {
-        "id": "idea-a", "phase": "killed",
+        "id": "idea-a",
+        "phase": "killed",
         "priority_score": 7.0,
     }
     pm.blackboard.pending_post_ready.return_value = []
@@ -486,19 +534,24 @@ def test_pipeline_producer_skips_terminal(tmp_path):
 
 # ── Cadence producer tests ───────────────────────────────────────────
 
+
 def _make_pool_with_watcher(tmp_path):
     """Pool with a cadence-tracked watcher agent."""
     pm = _make_pool(tmp_path)
+
     def _get_agent(name):
         m = MagicMock()
         m.cadence = "0 */6 * * *" if name == "watcher" else None
         m.phase = None
         m.max_concurrent = 1
         return m
+
     pm.registry.get_agent.side_effect = _get_agent
     pm.blackboard.list_ideas.return_value = ["idea-a", "idea-b"]
     pm.blackboard.get_status.side_effect = lambda id: {
-        "id": id, "phase": "released", "priority_score": 5.0,
+        "id": id,
+        "phase": "released",
+        "priority_score": 5.0,
     }
     return pm
 
@@ -532,6 +585,7 @@ def test_cadence_producer_skips_not_due(tmp_path):
 
 
 # ── _pop_schedulable tests ───────────────────────────────────────────
+
 
 def test_pop_schedulable_respects_max_concurrent(tmp_path):
     """pop_schedulable skips roles that hit max_concurrent."""
@@ -571,6 +625,7 @@ def test_pop_schedulable_parallel_groups(tmp_path):
 
 # ── _get_active_ideas tests ──────────────────────────────────────────
 
+
 def test_get_active_ideas_excludes_killed(tmp_path):
     """Killed ideas are excluded."""
     pm = _make_pool(tmp_path)
@@ -582,7 +637,8 @@ def test_get_active_ideas_excludes_killed(tmp_path):
     )
     pm.blackboard.pending_post_ready.return_value = []
     pm.blackboard.get_pipeline.return_value = {
-        "agents": ["ideation"], "parallel_groups": [["ideation"]],
+        "agents": ["ideation"],
+        "parallel_groups": [["ideation"]],
     }
     pm.blackboard.next_agent.return_value = "ideation"
     ideas = pm._get_active_ideas()
@@ -595,7 +651,9 @@ def test_get_active_ideas_early_boost(tmp_path):
     pm = _make_pool(tmp_path)
     pm.blackboard.list_ideas.return_value = ["new"]
     pm.blackboard.get_status.return_value = {
-        "id": "new", "phase": "submitted", "priority_score": 5.0,
+        "id": "new",
+        "phase": "submitted",
+        "priority_score": 5.0,
     }
     pm.blackboard.pending_post_ready.return_value = []
     pm.blackboard.get_pipeline.return_value = {

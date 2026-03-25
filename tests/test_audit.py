@@ -1,13 +1,12 @@
 """Tests for trellis/core/audit.py — PostToolUse audit hook."""
+
 from __future__ import annotations
 
 import json
 import logging
-from pathlib import Path
 
-import pytest
 
-from trellis.core.audit import make_audit_hooks, _configure_audit_handler
+from trellis.core.audit import make_audit_hooks
 
 
 async def test_hook_returns_empty_dict(tmp_path):
@@ -27,6 +26,7 @@ async def test_hook_returns_empty_dict(tmp_path):
 async def test_bash_not_logged(tmp_path, caplog):
     # Reset handler config for test isolation
     import trellis.core.audit as audit_mod
+
     audit_mod._audit_handler_configured = False
     # Remove existing handlers
     logger = logging.getLogger("trellis.audit")
@@ -49,6 +49,7 @@ async def test_bash_not_logged(tmp_path, caplog):
 
 async def test_read_logged_with_path(tmp_path):
     import trellis.core.audit as audit_mod
+
     audit_mod._audit_handler_configured = False
     logger = logging.getLogger("trellis.audit")
     logger.handlers = []
@@ -64,7 +65,7 @@ async def test_read_logged_with_path(tmp_path):
     )
 
     assert audit_file.exists()
-    lines = [l for l in audit_file.read_text().splitlines() if l.strip()]
+    lines = [line for line in audit_file.read_text().splitlines() if line.strip()]
     assert len(lines) >= 1
     entry = json.loads(lines[-1])
     assert entry["tool"] == "Read"
@@ -75,6 +76,7 @@ async def test_read_logged_with_path(tmp_path):
 
 async def test_web_search_logged_with_query(tmp_path):
     import trellis.core.audit as audit_mod
+
     audit_mod._audit_handler_configured = False
     logger = logging.getLogger("trellis.audit")
     logger.handlers = []
@@ -83,13 +85,17 @@ async def test_web_search_logged_with_query(tmp_path):
     hook_fn = hooks["PostToolUse"][0].hooks[0]
 
     await hook_fn(
-        {"tool_name": "WebSearch", "tool_input": {"query": "market size AI agents"}, "tool_response": ""},
+        {
+            "tool_name": "WebSearch",
+            "tool_input": {"query": "market size AI agents"},
+            "tool_response": "",
+        },
         "id-4",
         None,
     )
 
     audit_file = tmp_path / "pool" / "audit.jsonl"
-    lines = [l for l in audit_file.read_text().splitlines() if l.strip()]
+    lines = [line for line in audit_file.read_text().splitlines() if line.strip()]
     entry = json.loads(lines[-1])
     assert entry["tool"] == "WebSearch"
     assert "market size" in entry["query"]

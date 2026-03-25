@@ -4,7 +4,6 @@ import json
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
-import pytest
 
 # We test _load_presets as a unit — it reads from disk, no FastAPI needed.
 
@@ -34,7 +33,12 @@ def test_load_presets_returns_dict_from_file(tmp_path: Path):
 
     assert result == presets_data
     assert "full-pipeline" in result
-    assert result["full-pipeline"]["stages"] == ["ideation", "implementation", "validation", "release"]
+    assert result["full-pipeline"]["stages"] == [
+        "ideation",
+        "implementation",
+        "validation",
+        "release",
+    ]
 
 
 def test_load_presets_returns_empty_dict_when_missing(tmp_path: Path):
@@ -70,16 +74,20 @@ def test_get_registered_roles():
     from trellis.web.api.routes.ideas import _get_registered_roles
     from trellis.core.registry import Registry, AgentConfig
 
-    registry = Registry(agents={
-        "ideation": AgentConfig(name="ideation", description="test"),
-        "validation": AgentConfig(name="validation", description="test"),
-    })
+    registry = Registry(
+        agents={
+            "ideation": AgentConfig(name="ideation", description="test"),
+            "validation": AgentConfig(name="validation", description="test"),
+        }
+    )
 
     mock_settings = MagicMock()
     mock_settings.registry_path = Path("/fake/registry.yaml")
 
-    with patch("trellis.web.api.routes.ideas.get_settings", return_value=mock_settings), \
-         patch("trellis.web.api.routes.ideas.load_registry", return_value=registry):
+    with (
+        patch("trellis.web.api.routes.ideas.get_settings", return_value=mock_settings),
+        patch("trellis.web.api.routes.ideas.load_registry", return_value=registry),
+    ):
         result = _get_registered_roles()
 
     assert result == {"ideation", "validation"}

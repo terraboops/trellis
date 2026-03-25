@@ -270,6 +270,7 @@ class EvolutionManager:
                 if "confidence" in action:
                     obj["confidence"] = action["confidence"]
                 from trellis.tools.knowledge_io import _now_iso
+
                 obj["updated_at"] = _now_iso()
                 save_object(knowledge_dir, obj)
 
@@ -280,9 +281,12 @@ class EvolutionManager:
                     delete_object(knowledge_dir, mid)
                 # Create merged entry
                 from trellis.tools.knowledge_io import semantic_hash, _now_iso
+
                 predicates = action.get("predicates", [])
                 merged = {
-                    "id": semantic_hash(predicates) if predicates else action.get("ids", ["merged"])[0],
+                    "id": semantic_hash(predicates)
+                    if predicates
+                    else action.get("ids", ["merged"])[0],
                     "predicates": predicates,
                     "insight": action.get("insight", ""),
                     "justification": action.get("justification", ""),

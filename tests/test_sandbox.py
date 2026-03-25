@@ -1,9 +1,9 @@
 """Tests for trellis/core/sandbox.py — nono CLI flag building."""
+
 from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
 
 from trellis.core.registry import AgentConfig
 from trellis.core.sandbox import build_nono_flags
@@ -17,6 +17,7 @@ def _flags(config: AgentConfig, tmp_path: Path) -> str:
 
 
 # ── build_nono_flags tests ──────────────────────────────────────────────
+
 
 def test_build_nono_flags_defaults(tmp_path):
     config = AgentConfig(name="test", description="t")
@@ -51,7 +52,8 @@ def test_build_nono_flags_global_idea(tmp_path):
 
 def test_build_nono_flags_proxy_credentials(tmp_path):
     config = AgentConfig(
-        name="test", description="t",
+        name="test",
+        description="t",
         sandbox_proxy_credentials=["anthropic", "github"],
     )
     flags = _flags(config, tmp_path)
@@ -61,7 +63,8 @@ def test_build_nono_flags_proxy_credentials(tmp_path):
 
 def test_build_nono_flags_allowed_hosts(tmp_path):
     config = AgentConfig(
-        name="test", description="t",
+        name="test",
+        description="t",
         sandbox_allowed_hosts=["api.anthropic.com", "github.com"],
     )
     flags = _flags(config, tmp_path)
@@ -71,7 +74,8 @@ def test_build_nono_flags_allowed_hosts(tmp_path):
 
 def test_build_nono_flags_allowed_ports(tmp_path):
     config = AgentConfig(
-        name="test", description="t",
+        name="test",
+        description="t",
         sandbox_allowed_ports=[3000, 8080],
     )
     flags = _flags(config, tmp_path)
@@ -81,7 +85,8 @@ def test_build_nono_flags_allowed_ports(tmp_path):
 
 def test_build_nono_flags_allowed_commands(tmp_path):
     config = AgentConfig(
-        name="test", description="t",
+        name="test",
+        description="t",
         sandbox_allowed_commands=["rm", "docker"],
     )
     flags = _flags(config, tmp_path)
@@ -91,7 +96,8 @@ def test_build_nono_flags_allowed_commands(tmp_path):
 
 def test_build_nono_flags_credential_maps(tmp_path):
     config = AgentConfig(
-        name="test", description="t",
+        name="test",
+        description="t",
         sandbox_credential_maps=["op://Dev/OpenAI/key -> OPENAI_API_KEY"],
     )
     flags = _flags(config, tmp_path)
@@ -104,7 +110,8 @@ def test_build_nono_flags_extra_paths(tmp_path):
     extra_read.mkdir()
     extra_write.mkdir()
     config = AgentConfig(
-        name="test", description="t",
+        name="test",
+        description="t",
         sandbox_extra_read_paths=[str(extra_read)],
         sandbox_extra_write_paths=[str(extra_write)],
     )
@@ -115,7 +122,8 @@ def test_build_nono_flags_extra_paths(tmp_path):
 
 def test_build_nono_flags_extra_paths_skips_missing(tmp_path):
     config = AgentConfig(
-        name="test", description="t",
+        name="test",
+        description="t",
         sandbox_extra_read_paths=["/nonexistent/path"],
     )
     flags = _flags(config, tmp_path)
@@ -124,7 +132,8 @@ def test_build_nono_flags_extra_paths_skips_missing(tmp_path):
 
 def test_build_nono_flags_empty_config(tmp_path):
     config = AgentConfig(
-        name="test", description="t",
+        name="test",
+        description="t",
         sandbox_proxy_credentials=[],
         sandbox_allowed_hosts=[],
         sandbox_allowed_ports=[],

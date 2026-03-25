@@ -29,8 +29,10 @@ def test_serve_background_creates_pidfile(tmp_path):
     mock_proc = MagicMock()
     mock_proc.pid = 12345
 
-    with patch("trellis.cli.get_settings", return_value=settings), \
-         patch("subprocess.Popen", return_value=mock_proc):
+    with (
+        patch("trellis.cli.get_settings", return_value=settings),
+        patch("subprocess.Popen", return_value=mock_proc),
+    ):
         result = runner.invoke(app, ["serve", "--background"])
 
     assert result.exit_code == 0, result.output
@@ -43,9 +45,11 @@ def test_serve_stop_sends_sigterm(tmp_path):
     settings = _setup_project(tmp_path)
     (tmp_path / "pool" / "trellis.pid").write_text("99999")
 
-    with patch("trellis.cli.get_settings", return_value=settings), \
-         patch("trellis.cli.os.kill") as mock_kill, \
-         patch("trellis.cli.time.sleep"):
+    with (
+        patch("trellis.cli.get_settings", return_value=settings),
+        patch("trellis.cli.os.kill") as mock_kill,
+        patch("trellis.cli.time.sleep"),
+    ):
         # first call succeeds (SIGTERM), second raises OSError (process gone)
         mock_kill.side_effect = [None, OSError]
         result = runner.invoke(app, ["serve", "--stop"])
@@ -68,8 +72,10 @@ def test_serve_stop_stale_pid(tmp_path):
     settings = _setup_project(tmp_path)
     (tmp_path / "pool" / "trellis.pid").write_text("99999")
 
-    with patch("trellis.cli.get_settings", return_value=settings), \
-         patch("trellis.cli.os.kill") as mock_kill:
+    with (
+        patch("trellis.cli.get_settings", return_value=settings),
+        patch("trellis.cli.os.kill") as mock_kill,
+    ):
         # SIGTERM fails because process doesn't exist
         mock_kill.side_effect = OSError
         result = runner.invoke(app, ["serve", "--stop"])

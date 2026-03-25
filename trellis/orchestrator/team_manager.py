@@ -28,8 +28,16 @@ class TeamManager:
         lines = mvp_spec.lower().split("\n")
 
         component_signals = [
-            "frontend", "backend", "api", "database", "auth",
-            "deployment", "cli", "worker", "queue", "cache",
+            "frontend",
+            "backend",
+            "api",
+            "database",
+            "auth",
+            "deployment",
+            "cli",
+            "worker",
+            "queue",
+            "cache",
         ]
 
         for signal in component_signals:

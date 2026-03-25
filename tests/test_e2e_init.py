@@ -1,5 +1,3 @@
-import json
-from pathlib import Path
 from typer.testing import CliRunner
 from trellis.cli import app
 
@@ -24,6 +22,7 @@ def test_full_lifecycle(tmp_path, monkeypatch):
     # Verify config discovery works
     monkeypatch.chdir(project)
     from trellis.config import find_project_root
+
     assert find_project_root() == project
 
     # Verify agent upgrade works

@@ -45,6 +45,7 @@ class MigrationResult:
     message: str
     agents_modified: list[str]
     errors: list[str] | None = None
+    _updated_data: dict | None = None  # Internal: holds updated data after apply
 
 
 class Migration(ABC):
@@ -81,19 +82,37 @@ class Migration(ABC):
 # ── v0.4.0: Add sandbox fields to all agents ────────────────────────────────
 
 _SANDBOX_DEFAULTS_BY_ROLE = {
-    "ideation":     {"sandbox_enabled": False, "sandbox_ssh": False, "sandbox_rollback": False,
-                     "sandbox_proxy_credentials": ["anthropic"], "sandbox_allowed_hosts": [],
-                     "sandbox_allowed_commands": []},
-    "implementation": {"sandbox_enabled": False, "sandbox_ssh": True, "sandbox_rollback": True,
-                       "sandbox_proxy_credentials": ["anthropic", "github"],
-                       "sandbox_allowed_hosts": ["github.com", "api.github.com"],
-                       "sandbox_allowed_commands": []},
-    "validation":   {"sandbox_enabled": False, "sandbox_ssh": False, "sandbox_rollback": False,
-                     "sandbox_proxy_credentials": ["anthropic"], "sandbox_allowed_hosts": []},
-    "release":      {"sandbox_enabled": False, "sandbox_ssh": True, "sandbox_rollback": True,
-                     "sandbox_proxy_credentials": ["anthropic", "github"],
-                     "sandbox_allowed_hosts": ["github.com", "api.github.com", "pypi.org"],
-                     "sandbox_allowed_commands": []},
+    "ideation": {
+        "sandbox_enabled": False,
+        "sandbox_ssh": False,
+        "sandbox_rollback": False,
+        "sandbox_proxy_credentials": ["anthropic"],
+        "sandbox_allowed_hosts": [],
+        "sandbox_allowed_commands": [],
+    },
+    "implementation": {
+        "sandbox_enabled": False,
+        "sandbox_ssh": True,
+        "sandbox_rollback": True,
+        "sandbox_proxy_credentials": ["anthropic", "github"],
+        "sandbox_allowed_hosts": ["github.com", "api.github.com"],
+        "sandbox_allowed_commands": [],
+    },
+    "validation": {
+        "sandbox_enabled": False,
+        "sandbox_ssh": False,
+        "sandbox_rollback": False,
+        "sandbox_proxy_credentials": ["anthropic"],
+        "sandbox_allowed_hosts": [],
+    },
+    "release": {
+        "sandbox_enabled": False,
+        "sandbox_ssh": True,
+        "sandbox_rollback": True,
+        "sandbox_proxy_credentials": ["anthropic", "github"],
+        "sandbox_allowed_hosts": ["github.com", "api.github.com", "pypi.org"],
+        "sandbox_allowed_commands": [],
+    },
 }
 _SANDBOX_COMMON_DEFAULTS = {
     "sandbox_enabled": False,
@@ -114,12 +133,15 @@ _SANDBOX_KEYS = set(_SANDBOX_COMMON_DEFAULTS)
 
 class AddSandboxFieldsMigration(Migration):
     version = "0.4.0"
-    description = "Add sandbox security fields to all agent entries (defaults: sandbox_enabled=false)"
+    description = (
+        "Add sandbox security fields to all agent entries (defaults: sandbox_enabled=false)"
+    )
 
     def check(self, registry_data: dict) -> MigrationCheck:
         agents = registry_data.get("agents", [])
         missing = [
-            a.get("name", "?") for a in agents
+            a.get("name", "?")
+            for a in agents
             if isinstance(a, dict) and not _SANDBOX_KEYS.issubset(a.keys())
         ]
         if not missing:
@@ -166,7 +188,9 @@ class RemoveIdeationBashAgentMigration(Migration):
             if phase == "ideation" and ("Bash" in tools or "Agent" in tools):
                 affected.append(a.get("name", "?"))
         if not affected:
-            return MigrationCheck(needed=False, reason="Ideation agents already lack Bash/Agent tools")
+            return MigrationCheck(
+                needed=False, reason="Ideation agents already lack Bash/Agent tools"
+            )
         return MigrationCheck(
             needed=True,
             reason=f"Ideation agent(s) still have Bash or Agent tool: {affected}",
@@ -199,6 +223,7 @@ ALL_MIGRATIONS: list[Migration] = [
 
 # ── Runner ────────────────────────────────────────────────────────────────
 
+
 def load_registry_data(path: Path) -> dict:
     if not path.exists():
         return {"agents": []}
@@ -212,10 +237,7 @@ def save_registry_data(path: Path, data: dict) -> None:
 def check_all(registry_data: dict) -> list[tuple[Migration, MigrationCheck]]:
     """Return list of (migration, check) for all needed migrations."""
     return [
-        (m, check)
-        for m in ALL_MIGRATIONS
-        for check in [m.check(registry_data)]
-        if check.needed
+        (m, check) for m in ALL_MIGRATIONS for check in [m.check(registry_data)] if check.needed
     ]
 
 
@@ -234,18 +256,20 @@ async def apply_migration(
         # For LLM-assisted migrations, always require human review
         if migration.llm_assisted:
             import difflib
+
             before = yaml.dump(registry_data, default_flow_style=False, sort_keys=False)
             after = yaml.dump(updated, default_flow_style=False, sort_keys=False)
-            diff = "".join(difflib.unified_diff(
-                before.splitlines(keepends=True),
-                after.splitlines(keepends=True),
-                fromfile="registry.yaml (before)",
-                tofile="registry.yaml (after)",
-                n=3,
-            ))
+            diff = "".join(
+                difflib.unified_diff(
+                    before.splitlines(keepends=True),
+                    after.splitlines(keepends=True),
+                    fromfile="registry.yaml (before)",
+                    tofile="registry.yaml (after)",
+                    n=3,
+                )
+            )
             approved = await confirm(
-                f"Apply LLM-assisted migration: {migration.description}",
-                f"Changes:\n{diff}"
+                f"Apply LLM-assisted migration: {migration.description}", f"Changes:\n{diff}"
             )
             if not approved:
                 return MigrationResult(
@@ -268,15 +292,6 @@ async def apply_migration(
             agents_modified=[],
             errors=[str(e)],
         )
-
-
-@dataclass
-class MigrationResult:
-    success: bool
-    message: str
-    agents_modified: list[str]
-    errors: list[str] | None = None
-    _updated_data: dict | None = None  # Internal: holds updated data after apply
 
 
 async def run_migrations(
@@ -306,21 +321,27 @@ async def run_migrations(
     for migration, check in needed:
         logger.info(
             "Migration needed: %s — %s (affects: %s)",
-            migration.version, check.reason, check.affected_agents,
+            migration.version,
+            check.reason,
+            check.affected_agents,
         )
 
         if dry_run:
-            results.append(MigrationResult(
-                success=True,
-                message=f"[dry-run] Would apply: {migration.description}",
-                agents_modified=check.affected_agents or [],
-            ))
+            results.append(
+                MigrationResult(
+                    success=True,
+                    message=f"[dry-run] Would apply: {migration.description}",
+                    agents_modified=check.affected_agents or [],
+                )
+            )
             continue
 
         # Auto-confirm mechanical migrations if --yes flag set
         if auto_yes and not migration.llm_assisted:
+
             async def _auto_confirm(action, details):
                 return True
+
             result_confirm = _auto_confirm
         else:
             result_confirm = confirm

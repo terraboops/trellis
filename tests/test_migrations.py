@@ -1,9 +1,7 @@
 """Tests for the registry migration system."""
+
 from __future__ import annotations
 
-from pathlib import Path
-
-import pytest
 
 from trellis.core.migrations import (
     AddSandboxFieldsMigration,
@@ -25,6 +23,7 @@ def _basic_agent(name="test", phase="ideation", tools=None):
 
 # ── AddSandboxFieldsMigration ──────────────────────────────────────────────
 
+
 def test_sandbox_migration_needed_when_fields_missing():
     data = _registry_with_agents(_basic_agent())
     m = AddSandboxFieldsMigration()
@@ -36,20 +35,22 @@ def test_sandbox_migration_needed_when_fields_missing():
 def test_sandbox_migration_not_needed_when_fields_present():
     agent = _basic_agent()
     # Add all sandbox fields
-    agent.update({
-        "sandbox_enabled": False,
-        "sandbox_ssh": False,
-        "sandbox_rollback": False,
-        "sandbox_profile": "claude-code",
-        "sandbox_proxy_credentials": ["anthropic"],
-        "sandbox_allowed_hosts": [],
-        "sandbox_allowed_ports": [],
-        "sandbox_allowed_commands": [],
-        "sandbox_extra_read_paths": [],
-        "sandbox_extra_write_paths": [],
-        "sandbox_credential_maps": [],
-        "sandbox_verify_attestations": False,
-    })
+    agent.update(
+        {
+            "sandbox_enabled": False,
+            "sandbox_ssh": False,
+            "sandbox_rollback": False,
+            "sandbox_profile": "claude-code",
+            "sandbox_proxy_credentials": ["anthropic"],
+            "sandbox_allowed_hosts": [],
+            "sandbox_allowed_ports": [],
+            "sandbox_allowed_commands": [],
+            "sandbox_extra_read_paths": [],
+            "sandbox_extra_write_paths": [],
+            "sandbox_credential_maps": [],
+            "sandbox_verify_attestations": False,
+        }
+    )
     data = _registry_with_agents(agent)
     m = AddSandboxFieldsMigration()
     check = m.check(data)
@@ -89,6 +90,7 @@ def test_sandbox_migration_does_not_overwrite_existing():
 
 
 # ── RemoveIdeationBashAgentMigration ────────────────────────────────────────
+
 
 def test_remove_bash_agent_needed():
     agent = _basic_agent("ideation", "ideation", tools=["Read", "Bash", "Agent", "WebSearch"])
@@ -130,15 +132,22 @@ def test_remove_bash_agent_only_affects_ideation():
 
 # ── check_all ────────────────────────────────────────────────────────────────
 
+
 def test_check_all_empty_when_up_to_date():
     agent = _basic_agent("ideation", "ideation")
     # Add all fields
     for k, v in {
-        "sandbox_enabled": False, "sandbox_ssh": False, "sandbox_rollback": False,
-        "sandbox_profile": "claude-code", "sandbox_proxy_credentials": ["anthropic"],
-        "sandbox_allowed_hosts": [], "sandbox_allowed_ports": [],
-        "sandbox_allowed_commands": [], "sandbox_extra_read_paths": [],
-        "sandbox_extra_write_paths": [], "sandbox_credential_maps": [],
+        "sandbox_enabled": False,
+        "sandbox_ssh": False,
+        "sandbox_rollback": False,
+        "sandbox_profile": "claude-code",
+        "sandbox_proxy_credentials": ["anthropic"],
+        "sandbox_allowed_hosts": [],
+        "sandbox_allowed_ports": [],
+        "sandbox_allowed_commands": [],
+        "sandbox_extra_read_paths": [],
+        "sandbox_extra_write_paths": [],
+        "sandbox_credential_maps": [],
         "sandbox_verify_attestations": False,
     }.items():
         agent[k] = v
@@ -157,6 +166,7 @@ def test_check_all_returns_multiple():
 
 
 # ── round-trip: disk read → migrate → disk write ────────────────────────────
+
 
 async def test_run_migrations_round_trip(tmp_path):
     reg = tmp_path / "registry.yaml"
@@ -185,5 +195,5 @@ async def test_run_migrations_dry_run_does_not_write(tmp_path):
     async def confirm(action, details):
         return True
 
-    results = await run_migrations(reg, confirm, dry_run=True)
+    await run_migrations(reg, confirm, dry_run=True)
     assert reg.read_text() == original  # not modified

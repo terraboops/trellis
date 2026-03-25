@@ -93,11 +93,13 @@ def _get_ideas() -> list[dict]:
         try:
             status = bb.get_status(idea_id)
             if status.get("phase") not in ("released", "killed"):
-                ideas.append({
-                    "id": idea_id,
-                    "title": status.get("title", idea_id),
-                    "phase": status.get("phase", "unknown"),
-                })
+                ideas.append(
+                    {
+                        "id": idea_id,
+                        "title": status.get("title", idea_id),
+                        "phase": status.get("phase", "unknown"),
+                    }
+                )
         except Exception:
             continue
     return ideas
@@ -115,13 +117,17 @@ def _get_available_agents() -> list[dict]:
 
 # --- Routes ---
 
+
 @router.get("/", response_class=HTMLResponse)
 async def pipelines_list(request: Request):
     tpls = _list_templates()
-    return templates.TemplateResponse("pipelines.html", {
-        "request": request,
-        "templates": tpls,
-    })
+    return templates.TemplateResponse(
+        "pipelines.html",
+        {
+            "request": request,
+            "templates": tpls,
+        },
+    )
 
 
 @router.get("/new", response_class=HTMLResponse)
@@ -134,13 +140,16 @@ async def pipeline_new_form(request: Request):
         "parallel_groups": [],
         "gating": {"default": "auto", "overrides": {}},
     }
-    return templates.TemplateResponse("pipeline_detail.html", {
-        "request": request,
-        "pipeline": blank,
-        "is_new": True,
-        "ideas": _get_ideas(),
-        "available_agents": _get_available_agents(),
-    })
+    return templates.TemplateResponse(
+        "pipeline_detail.html",
+        {
+            "request": request,
+            "pipeline": blank,
+            "is_new": True,
+            "ideas": _get_ideas(),
+            "available_agents": _get_available_agents(),
+        },
+    )
 
 
 @router.post("/new", response_class=HTMLResponse)
@@ -205,13 +214,16 @@ async def pipeline_detail(request: Request, name: str):
         return HTMLResponse("Pipeline template not found", status_code=404)
 
     pipeline = _load_template(path)
-    return templates.TemplateResponse("pipeline_detail.html", {
-        "request": request,
-        "pipeline": pipeline,
-        "is_new": False,
-        "ideas": _get_ideas(),
-        "available_agents": _get_available_agents(),
-    })
+    return templates.TemplateResponse(
+        "pipeline_detail.html",
+        {
+            "request": request,
+            "pipeline": pipeline,
+            "is_new": False,
+            "ideas": _get_ideas(),
+            "available_agents": _get_available_agents(),
+        },
+    )
 
 
 @router.post("/{name}", response_class=HTMLResponse)

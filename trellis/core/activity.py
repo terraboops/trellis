@@ -35,16 +35,17 @@ class ActivityTracker:
         data = self._read()
         # Remove any existing entry for this agent+idea (in case of stale restart)
         data["running"] = [
-            e for e in data["running"]
-            if not (e["agent"] == agent_name and e["idea_id"] == idea_id)
+            e for e in data["running"] if not (e["agent"] == agent_name and e["idea_id"] == idea_id)
         ]
-        data["running"].append({
-            "agent": agent_name,
-            "idea_id": idea_id,
-            "idea_title": idea_title,
-            "started_at": datetime.now(timezone.utc).isoformat(),
-            "model": model,
-        })
+        data["running"].append(
+            {
+                "agent": agent_name,
+                "idea_id": idea_id,
+                "idea_title": idea_title,
+                "started_at": datetime.now(timezone.utc).isoformat(),
+                "model": model,
+            }
+        )
         self._write(data)
         logger.info("Activity: started %s on %s", agent_name, idea_id)
 
@@ -52,8 +53,7 @@ class ActivityTracker:
         """Remove an agent from the running list."""
         data = self._read()
         data["running"] = [
-            e for e in data["running"]
-            if not (e["agent"] == agent_name and e["idea_id"] == idea_id)
+            e for e in data["running"] if not (e["agent"] == agent_name and e["idea_id"] == idea_id)
         ]
         self._write(data)
         logger.info("Activity: stopped %s on %s", agent_name, idea_id)

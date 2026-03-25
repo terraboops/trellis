@@ -5,6 +5,7 @@ The MCP tools in evolution_tools.py are thin wrappers around knowledge_io
 functions, so we test the behavior (create, dedup, read, delete, search)
 rather than the MCP protocol layer.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -13,7 +14,6 @@ import pytest
 import yaml
 
 from trellis.tools.knowledge_io import (
-    _now_iso,
     delete_object,
     find_by_id,
     format_for_prompt,
@@ -62,13 +62,16 @@ def test_write_knowledge_deduplicates(knowledge_dir: Path):
     obj_id = semantic_hash(preds)
 
     # First write
-    save_object(knowledge_dir, {
-        "id": obj_id,
-        "predicates": preds,
-        "insight": "First version.",
-        "justification": "Reason 1.",
-        "confidence": 0.5,
-    })
+    save_object(
+        knowledge_dir,
+        {
+            "id": obj_id,
+            "predicates": preds,
+            "insight": "First version.",
+            "justification": "Reason 1.",
+            "confidence": 0.5,
+        },
+    )
 
     # Second write with same predicates — simulates dedup merge
     existing = find_by_id(knowledge_dir, obj_id)
@@ -89,12 +92,15 @@ def test_write_knowledge_deduplicates(knowledge_dir: Path):
 
 def test_write_knowledge_requires_justification(knowledge_dir: Path):
     """Empty justification still writes — flagged in UI by empty field."""
-    save_object(knowledge_dir, {
-        "predicates": [["a", "b", "c"]],
-        "insight": "Some insight.",
-        "justification": "",
-        "confidence": 0.5,
-    })
+    save_object(
+        knowledge_dir,
+        {
+            "predicates": [["a", "b", "c"]],
+            "insight": "Some insight.",
+            "justification": "",
+            "confidence": 0.5,
+        },
+    )
 
     objects = load_objects(knowledge_dir)
     assert len(objects) == 1
@@ -107,13 +113,16 @@ def test_write_knowledge_requires_justification(knowledge_dir: Path):
 def test_read_knowledge_includes_ids(knowledge_dir: Path):
     preds = [["x", "y", "z"]]
     obj_id = semantic_hash(preds)
-    save_object(knowledge_dir, {
-        "id": obj_id,
-        "predicates": preds,
-        "insight": "Test insight.",
-        "justification": "Test reason.",
-        "confidence": 0.7,
-    })
+    save_object(
+        knowledge_dir,
+        {
+            "id": obj_id,
+            "predicates": preds,
+            "insight": "Test insight.",
+            "justification": "Test reason.",
+            "confidence": 0.7,
+        },
+    )
 
     objects = load_objects(knowledge_dir)
     formatted = format_for_prompt(objects)
@@ -126,13 +135,16 @@ def test_read_knowledge_includes_ids(knowledge_dir: Path):
 def test_delete_knowledge_removes_file(knowledge_dir: Path):
     preds = [["delete", "this", "entry"]]
     obj_id = semantic_hash(preds)
-    save_object(knowledge_dir, {
-        "id": obj_id,
-        "predicates": preds,
-        "insight": "To be deleted.",
-        "justification": "Reason.",
-        "confidence": 0.5,
-    })
+    save_object(
+        knowledge_dir,
+        {
+            "id": obj_id,
+            "predicates": preds,
+            "insight": "To be deleted.",
+            "justification": "Reason.",
+            "confidence": 0.5,
+        },
+    )
 
     assert delete_object(knowledge_dir, obj_id)
     assert len(list(knowledge_dir.glob("*.yaml"))) == 0

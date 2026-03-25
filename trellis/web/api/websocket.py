@@ -17,11 +17,13 @@ _clients: set[WebSocket] = set()
 async def broadcast_event(event_type: str, data: dict) -> None:
     """Broadcast an event to all connected WebSocket clients."""
     global _clients
-    message = json.dumps({
-        "type": event_type,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        **data,
-    })
+    message = json.dumps(
+        {
+            "type": event_type,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            **data,
+        }
+    )
     disconnected = set()
     for client in _clients:
         try:
@@ -32,28 +34,37 @@ async def broadcast_event(event_type: str, data: dict) -> None:
 
 
 async def broadcast_phase_transition(idea_id: str, from_phase: str, to_phase: str) -> None:
-    await broadcast_event("phase_transition", {
-        "idea_id": idea_id,
-        "from_phase": from_phase,
-        "to_phase": to_phase,
-    })
+    await broadcast_event(
+        "phase_transition",
+        {
+            "idea_id": idea_id,
+            "from_phase": from_phase,
+            "to_phase": to_phase,
+        },
+    )
 
 
 async def broadcast_agent_status(idea_id: str, agent: str, status: str, detail: str = "") -> None:
-    await broadcast_event("agent_status", {
-        "idea_id": idea_id,
-        "agent": agent,
-        "status": status,
-        "detail": detail,
-    })
+    await broadcast_event(
+        "agent_status",
+        {
+            "idea_id": idea_id,
+            "agent": agent,
+            "status": status,
+            "detail": detail,
+        },
+    )
 
 
 async def broadcast_activity(idea_id: str, message: str, kind: str = "info") -> None:
-    await broadcast_event("activity", {
-        "idea_id": idea_id,
-        "message": message,
-        "kind": kind,
-    })
+    await broadcast_event(
+        "activity",
+        {
+            "idea_id": idea_id,
+            "message": message,
+            "kind": kind,
+        },
+    )
 
 
 @router.websocket("/ws/events")

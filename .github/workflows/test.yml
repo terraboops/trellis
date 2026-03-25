@@ -1,0 +1,45 @@
+name: Tests
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  unit-and-integration:
+    name: Unit & Integration Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: "latest"
+
+      - name: Install dependencies
+        run: uv sync --python 3.13 --extra dev
+
+      - name: Lint
+        run: uv run --python 3.13 ruff check .
+
+      - name: Unit tests
+        run: uv run --python 3.13 python -m pytest tests/ -m "unit or not (integration or e2e or smoke or regression)" -x -q --tb=short
+
+      - name: Integration tests
+        run: uv run --python 3.13 python -m pytest tests/ -m integration -x -q --tb=short
+
+      - name: Regression tests
+        run: uv run --python 3.13 python -m pytest tests/ -m regression -x -q --tb=short
+
+      - name: Smoke tests
+        run: uv run --python 3.13 python -m pytest tests/ -m smoke -x -q --tb=short
+
+      - name: E2E tests
+        run: uv run --python 3.13 python -m pytest tests/ -m e2e -x -q --tb=short
+
+      - name: Init + Serve lifecycle
+        run: uv run --python 3.13 python -m pytest tests/test_init_serve.py -x -q --tb=short
+
+      - name: Full suite (catch unmarked tests)
+        run: uv run --python 3.13 python -m pytest tests/ -x -q --tb=short

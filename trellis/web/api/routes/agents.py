@@ -21,24 +21,37 @@ templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 setup_filters(templates)
 
 # Shared constants for templates
-ALL_TOOLS = ["Read", "Write", "Edit", "Bash", "Glob", "Grep", "WebSearch", "WebFetch", "Agent", "AskUserQuestion"]
+ALL_TOOLS = [
+    "Read",
+    "Write",
+    "Edit",
+    "Bash",
+    "Glob",
+    "Grep",
+    "WebSearch",
+    "WebFetch",
+    "Agent",
+    "AskUserQuestion",
+]
 MODELS = ["claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-5"]
 PERMISSION_MODES = ["bypassPermissions", "acceptEdits", "default", "plan", "dontAsk"]
 
 
 def _agent_view_data(agent: AgentConfig, settings) -> dict:
     data = vars(agent).copy()
-    knowledge_dir = (
-        settings.project_root / "agents"
-        / (agent.phase or agent.name) / "knowledge"
-    )
+    knowledge_dir = settings.project_root / "agents" / (agent.phase or agent.name) / "knowledge"
     from trellis.tools.knowledge_io import load_objects
+
     objects = load_objects(knowledge_dir)
-    data["knowledge_size"] = sum(
-        (knowledge_dir / f"{o['id']}.yaml").stat().st_size
-        for o in objects
-        if (knowledge_dir / f"{o['id']}.yaml").exists()
-    ) if objects else 0
+    data["knowledge_size"] = (
+        sum(
+            (knowledge_dir / f"{o['id']}.yaml").stat().st_size
+            for o in objects
+            if (knowledge_dir / f"{o['id']}.yaml").exists()
+        )
+        if objects
+        else 0
+    )
     data["knowledge_count"] = len(objects)
 
     claude_md = ""
@@ -54,32 +67,45 @@ def _agent_view_data(agent: AgentConfig, settings) -> dict:
         prompt_py = _read_agent_prompt(agent.phase)
     data["prompt_py"] = prompt_py or ""
     prompt_path = (
-        settings.project_root / "trellis" / "agents"
-        / (agent.phase or agent.name) / "prompt.py"
+        settings.project_root / "trellis" / "agents" / (agent.phase or agent.name) / "prompt.py"
     )
-    data["prompt_path"] = str(prompt_path.relative_to(settings.project_root)) if prompt_path.exists() else ""
+    data["prompt_path"] = (
+        str(prompt_path.relative_to(settings.project_root)) if prompt_path.exists() else ""
+    )
     return data
 
 
-def _apply_form_to_config(config: AgentConfig, *, description: str, model: str,
-                           max_turns: int, max_budget_usd: float, max_concurrent: int,
-                           permission_mode: str,
-                           tools: str, thinking_type: str, status: str,
-                           phase: str, cadence: str, setting_sources: str,
-                           system_prompt_override: str, env_text: str,
-                           # Sandbox fields (all optional with safe defaults)
-                           sandbox_enabled: str = "",
-                           sandbox_ssh: str = "",
-                           sandbox_rollback: str = "",
-                           sandbox_verify_attestations: str = "",
-                           sandbox_proxy_credentials: str = "",
-                           sandbox_allowed_hosts: str = "",
-                           sandbox_allowed_ports: str = "",
-                           sandbox_allowed_commands: str = "",
-                           sandbox_extra_read_paths: str = "",
-                           sandbox_extra_write_paths: str = "",
-                           sandbox_credential_maps: str = "",
-                           sandbox_profile: str = "claude-code") -> None:
+def _apply_form_to_config(
+    config: AgentConfig,
+    *,
+    description: str,
+    model: str,
+    max_turns: int,
+    max_budget_usd: float,
+    max_concurrent: int,
+    permission_mode: str,
+    tools: str,
+    thinking_type: str,
+    status: str,
+    phase: str,
+    cadence: str,
+    setting_sources: str,
+    system_prompt_override: str,
+    env_text: str,
+    # Sandbox fields (all optional with safe defaults)
+    sandbox_enabled: str = "",
+    sandbox_ssh: str = "",
+    sandbox_rollback: str = "",
+    sandbox_verify_attestations: str = "",
+    sandbox_proxy_credentials: str = "",
+    sandbox_allowed_hosts: str = "",
+    sandbox_allowed_ports: str = "",
+    sandbox_allowed_commands: str = "",
+    sandbox_extra_read_paths: str = "",
+    sandbox_extra_write_paths: str = "",
+    sandbox_credential_maps: str = "",
+    sandbox_profile: str = "claude-code",
+) -> None:
     config.description = description
     config.model = model
     config.max_turns = max_turns
@@ -91,7 +117,11 @@ def _apply_form_to_config(config: AgentConfig, *, description: str, model: str,
     config.cadence = cadence.strip() or None
     config.tools = [t.strip() for t in tools.split(",") if t.strip()] if tools.strip() else []
     config.thinking = {"type": thinking_type} if thinking_type else None
-    config.setting_sources = [s.strip() for s in setting_sources.split(",") if s.strip()] if setting_sources.strip() else None
+    config.setting_sources = (
+        [s.strip() for s in setting_sources.split(",") if s.strip()]
+        if setting_sources.strip()
+        else None
+    )
     config.system_prompt_override = system_prompt_override.strip() or None
 
     # Parse env as key=value lines
@@ -112,13 +142,27 @@ def _apply_form_to_config(config: AgentConfig, *, description: str, model: str,
     config.sandbox_rollback = sandbox_rollback == "true"
     config.sandbox_verify_attestations = sandbox_verify_attestations == "true"
     config.sandbox_profile = sandbox_profile or "claude-code"
-    config.sandbox_proxy_credentials = [c.strip() for c in sandbox_proxy_credentials.split(",") if c.strip()] or ["anthropic"]
-    config.sandbox_allowed_hosts = [h.strip() for h in sandbox_allowed_hosts.split(",") if h.strip()]
-    config.sandbox_allowed_ports = [int(p.strip()) for p in sandbox_allowed_ports.split(",") if p.strip().isdigit()]
-    config.sandbox_allowed_commands = [c.strip() for c in sandbox_allowed_commands.split(",") if c.strip()]
-    config.sandbox_extra_read_paths = [p.strip() for p in sandbox_extra_read_paths.split(",") if p.strip()]
-    config.sandbox_extra_write_paths = [p.strip() for p in sandbox_extra_write_paths.split(",") if p.strip()]
-    config.sandbox_credential_maps = [m.strip() for m in sandbox_credential_maps.splitlines() if m.strip()]
+    config.sandbox_proxy_credentials = [
+        c.strip() for c in sandbox_proxy_credentials.split(",") if c.strip()
+    ] or ["anthropic"]
+    config.sandbox_allowed_hosts = [
+        h.strip() for h in sandbox_allowed_hosts.split(",") if h.strip()
+    ]
+    config.sandbox_allowed_ports = [
+        int(p.strip()) for p in sandbox_allowed_ports.split(",") if p.strip().isdigit()
+    ]
+    config.sandbox_allowed_commands = [
+        c.strip() for c in sandbox_allowed_commands.split(",") if c.strip()
+    ]
+    config.sandbox_extra_read_paths = [
+        p.strip() for p in sandbox_extra_read_paths.split(",") if p.strip()
+    ]
+    config.sandbox_extra_write_paths = [
+        p.strip() for p in sandbox_extra_write_paths.split(",") if p.strip()
+    ]
+    config.sandbox_credential_maps = [
+        m.strip() for m in sandbox_credential_maps.splitlines() if m.strip()
+    ]
 
 
 def _save_claude_md(config: AgentConfig, claude_md: str, settings) -> None:
@@ -139,6 +183,7 @@ def _template_ctx(agent: dict, is_new: bool = False) -> dict:
 
 
 # --- Routes ---
+
 
 @router.get("/", response_class=HTMLResponse)
 async def agents_view(request: Request):
@@ -225,6 +270,7 @@ Guidelines:
 
     # Parse the JSON from the response
     import json as _json
+
     try:
         # Strip any markdown fences if present
         text = result_text.strip()
@@ -233,7 +279,9 @@ Guidelines:
             text = text.rsplit("```", 1)[0]
         config = _json.loads(text)
     except (_json.JSONDecodeError, IndexError):
-        return JSONResponse({"error": "Failed to parse LLM response", "raw": result_text}, status_code=500)
+        return JSONResponse(
+            {"error": "Failed to parse LLM response", "raw": result_text}, status_code=500
+        )
 
     return JSONResponse(config)
 
@@ -269,12 +317,14 @@ async def plugins_api():
             install_loc = mp_info.get("installLocation", str(mp_dir / mp_name))
             mj_path = Path(install_loc) / ".claude-plugin" / "marketplace.json"
             if not mj_path.exists():
-                result_marketplaces.append({
-                    "name": mp_name,
-                    "source": mp_info.get("source", {}).get("repo", ""),
-                    "plugin_count": 0,
-                    "description": "",
-                })
+                result_marketplaces.append(
+                    {
+                        "name": mp_name,
+                        "source": mp_info.get("source", {}).get("repo", ""),
+                        "plugin_count": 0,
+                        "description": "",
+                    }
+                )
                 continue
 
             try:
@@ -283,23 +333,27 @@ async def plugins_api():
                 continue
 
             plugins_list = mj.get("plugins", [])
-            result_marketplaces.append({
-                "name": mj.get("name", mp_name),
-                "source": mp_info.get("source", {}).get("repo", str(mp_info.get("source", ""))),
-                "plugin_count": len(plugins_list),
-                "description": (mj.get("metadata", {}) or {}).get("description", ""),
-            })
+            result_marketplaces.append(
+                {
+                    "name": mj.get("name", mp_name),
+                    "source": mp_info.get("source", {}).get("repo", str(mp_info.get("source", ""))),
+                    "plugin_count": len(plugins_list),
+                    "description": (mj.get("metadata", {}) or {}).get("description", ""),
+                }
+            )
 
             for p in plugins_list:
-                result_plugins.append({
-                    "name": p.get("name", ""),
-                    "description": p.get("description", ""),
-                    "category": p.get("category", ""),
-                    "version": p.get("version", ""),
-                    "marketplace": mj.get("name", mp_name),
-                    "homepage": p.get("homepage", ""),
-                    "author": (p.get("author", {}) or {}).get("name", ""),
-                })
+                result_plugins.append(
+                    {
+                        "name": p.get("name", ""),
+                        "description": p.get("description", ""),
+                        "category": p.get("category", ""),
+                        "version": p.get("version", ""),
+                        "marketplace": mj.get("name", mp_name),
+                        "homepage": p.get("homepage", ""),
+                        "author": (p.get("author", {}) or {}).get("name", ""),
+                    }
+                )
 
     # Also check settings for extraKnownMarketplaces that aren't installed yet
     settings_path = Path.home() / ".claude" / "settings.json"
@@ -309,19 +363,23 @@ async def plugins_api():
             for name, conf in settings.get("extraKnownMarketplaces", {}).items():
                 if name not in known:
                     source = conf.get("source", {})
-                    result_marketplaces.append({
-                        "name": name,
-                        "source": source.get("repo", str(source)),
-                        "plugin_count": 0,
-                        "description": "(not yet synced)",
-                    })
+                    result_marketplaces.append(
+                        {
+                            "name": name,
+                            "source": source.get("repo", str(source)),
+                            "plugin_count": 0,
+                            "description": "(not yet synced)",
+                        }
+                    )
         except Exception:
             pass
 
-    return JSONResponse({
-        "marketplaces": result_marketplaces,
-        "plugins": result_plugins,
-    })
+    return JSONResponse(
+        {
+            "marketplaces": result_marketplaces,
+            "plugins": result_plugins,
+        }
+    )
 
 
 class AddMarketplaceRequest(BaseModel):
@@ -357,32 +415,53 @@ async def add_marketplace_api(req: AddMarketplaceRequest):
         name = source.split("/")[-1].replace(".git", "")
         extra[name] = {"source": {"source": "url", "url": source}}
     else:
-        return JSONResponse({"error": "Unsupported source format. Use owner/repo or a git URL."}, status_code=400)
+        return JSONResponse(
+            {"error": "Unsupported source format. Use owner/repo or a git URL."}, status_code=400
+        )
 
     settings_path.write_text(_json.dumps(settings, indent=2))
 
-    return JSONResponse({
-        "ok": True,
-        "name": name,
-        "message": f"Added marketplace '{name}'. Run '/plugin marketplace add {source}' in Claude Code to sync plugins.",
-    })
+    return JSONResponse(
+        {
+            "ok": True,
+            "name": name,
+            "message": f"Added marketplace '{name}'. Run '/plugin marketplace add {source}' in Claude Code to sync plugins.",
+        }
+    )
 
 
 @router.get("/new", response_class=HTMLResponse)
 async def new_agent_form(request: Request):
     blank = {
-        "name": "", "description": "", "model": "claude-sonnet-4-6",
-        "max_turns": 50, "max_budget_usd": 1.0, "status": "active",
-        "tools": [], "phase": "", "cadence": "", "permission_mode": "bypassPermissions",
-        "thinking": {"type": "adaptive"}, "setting_sources": ["project"],
-        "env": None, "system_prompt_override": "", "claude_home": "",
-        "claude_md": "", "knowledge_size": 0,
+        "name": "",
+        "description": "",
+        "model": "claude-sonnet-4-6",
+        "max_turns": 50,
+        "max_budget_usd": 1.0,
+        "status": "active",
+        "tools": [],
+        "phase": "",
+        "cadence": "",
+        "permission_mode": "bypassPermissions",
+        "thinking": {"type": "adaptive"},
+        "setting_sources": ["project"],
+        "env": None,
+        "system_prompt_override": "",
+        "claude_home": "",
+        "claude_md": "",
+        "knowledge_size": 0,
         # Sandbox defaults
-        "sandbox_enabled": False, "sandbox_ssh": False, "sandbox_rollback": False,
-        "sandbox_verify_attestations": False, "sandbox_profile": "claude-code",
-        "sandbox_proxy_credentials": ["anthropic"], "sandbox_allowed_hosts": [],
-        "sandbox_allowed_ports": [], "sandbox_allowed_commands": [],
-        "sandbox_extra_read_paths": [], "sandbox_extra_write_paths": [],
+        "sandbox_enabled": False,
+        "sandbox_ssh": False,
+        "sandbox_rollback": False,
+        "sandbox_verify_attestations": False,
+        "sandbox_profile": "claude-code",
+        "sandbox_proxy_credentials": ["anthropic"],
+        "sandbox_allowed_hosts": [],
+        "sandbox_allowed_ports": [],
+        "sandbox_allowed_commands": [],
+        "sandbox_extra_read_paths": [],
+        "sandbox_extra_write_paths": [],
         "sandbox_credential_maps": [],
     }
     ctx = _template_ctx(blank, is_new=True)
@@ -437,20 +516,33 @@ async def create_agent(
     config.claude_home = f"agents/{slug}/.claude"
 
     _apply_form_to_config(
-        config, description=description, model=model, max_turns=max_turns,
-        max_budget_usd=max_budget_usd, max_concurrent=max_concurrent,
+        config,
+        description=description,
+        model=model,
+        max_turns=max_turns,
+        max_budget_usd=max_budget_usd,
+        max_concurrent=max_concurrent,
         permission_mode=permission_mode,
-        tools=tools, thinking_type=thinking_type, status=status,
-        phase=phase, cadence=cadence, setting_sources=setting_sources,
-        system_prompt_override=system_prompt_override, env_text=env_text,
-        sandbox_enabled=sandbox_enabled, sandbox_ssh=sandbox_ssh,
-        sandbox_rollback=sandbox_rollback, sandbox_verify_attestations=sandbox_verify_attestations,
+        tools=tools,
+        thinking_type=thinking_type,
+        status=status,
+        phase=phase,
+        cadence=cadence,
+        setting_sources=setting_sources,
+        system_prompt_override=system_prompt_override,
+        env_text=env_text,
+        sandbox_enabled=sandbox_enabled,
+        sandbox_ssh=sandbox_ssh,
+        sandbox_rollback=sandbox_rollback,
+        sandbox_verify_attestations=sandbox_verify_attestations,
         sandbox_proxy_credentials=sandbox_proxy_credentials,
-        sandbox_allowed_hosts=sandbox_allowed_hosts, sandbox_allowed_ports=sandbox_allowed_ports,
+        sandbox_allowed_hosts=sandbox_allowed_hosts,
+        sandbox_allowed_ports=sandbox_allowed_ports,
         sandbox_allowed_commands=sandbox_allowed_commands,
         sandbox_extra_read_paths=sandbox_extra_read_paths,
         sandbox_extra_write_paths=sandbox_extra_write_paths,
-        sandbox_credential_maps=sandbox_credential_maps, sandbox_profile=sandbox_profile,
+        sandbox_credential_maps=sandbox_credential_maps,
+        sandbox_profile=sandbox_profile,
     )
 
     registry.register_agent(config, settings.registry_path)
@@ -505,15 +597,17 @@ async def agent_detail(request: Request, agent_name: str):
             if data.get("agent") != agent_name:
                 continue
             associated_ideas[idea_id] = idea_status.get("title", idea_id)
-            agent_logs.append({
-                "filename": f.name,
-                "idea_id": idea_id,
-                "idea_title": idea_status.get("title", idea_id),
-                "timestamp": data.get("timestamp", ""),
-                "model": data.get("model", ""),
-                "transcript_len": len(data.get("transcript", [])),
-                "run_status": data.get("run_status", ""),
-            })
+            agent_logs.append(
+                {
+                    "filename": f.name,
+                    "idea_id": idea_id,
+                    "idea_title": idea_status.get("title", idea_id),
+                    "timestamp": data.get("timestamp", ""),
+                    "model": data.get("model", ""),
+                    "transcript_len": len(data.get("transcript", [])),
+                    "run_status": data.get("run_status", ""),
+                }
+            )
 
     # Sort logs by timestamp descending
     agent_logs.sort(key=lambda x: x["timestamp"], reverse=True)
@@ -566,20 +660,33 @@ async def agent_update(
         return HTMLResponse("Agent not found", status_code=404)
 
     _apply_form_to_config(
-        config, description=description, model=model, max_turns=max_turns,
-        max_budget_usd=max_budget_usd, max_concurrent=max_concurrent,
+        config,
+        description=description,
+        model=model,
+        max_turns=max_turns,
+        max_budget_usd=max_budget_usd,
+        max_concurrent=max_concurrent,
         permission_mode=permission_mode,
-        tools=tools, thinking_type=thinking_type, status=status,
-        phase=phase, cadence=cadence, setting_sources=setting_sources,
-        system_prompt_override=system_prompt_override, env_text=env_text,
-        sandbox_enabled=sandbox_enabled, sandbox_ssh=sandbox_ssh,
-        sandbox_rollback=sandbox_rollback, sandbox_verify_attestations=sandbox_verify_attestations,
+        tools=tools,
+        thinking_type=thinking_type,
+        status=status,
+        phase=phase,
+        cadence=cadence,
+        setting_sources=setting_sources,
+        system_prompt_override=system_prompt_override,
+        env_text=env_text,
+        sandbox_enabled=sandbox_enabled,
+        sandbox_ssh=sandbox_ssh,
+        sandbox_rollback=sandbox_rollback,
+        sandbox_verify_attestations=sandbox_verify_attestations,
         sandbox_proxy_credentials=sandbox_proxy_credentials,
-        sandbox_allowed_hosts=sandbox_allowed_hosts, sandbox_allowed_ports=sandbox_allowed_ports,
+        sandbox_allowed_hosts=sandbox_allowed_hosts,
+        sandbox_allowed_ports=sandbox_allowed_ports,
         sandbox_allowed_commands=sandbox_allowed_commands,
         sandbox_extra_read_paths=sandbox_extra_read_paths,
         sandbox_extra_write_paths=sandbox_extra_write_paths,
-        sandbox_credential_maps=sandbox_credential_maps, sandbox_profile=sandbox_profile,
+        sandbox_credential_maps=sandbox_credential_maps,
+        sandbox_profile=sandbox_profile,
     )
     registry.save(settings.registry_path)
     _save_claude_md(config, claude_md, settings)

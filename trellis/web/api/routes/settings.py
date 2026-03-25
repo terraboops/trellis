@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 
 from fastapi import APIRouter, Form, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
-from trellis.config import get_settings
+from trellis.config import (
+    get_settings,
+    save_project_settings,
+    _invalidate_settings_cache,
+)
 from trellis.web.api.paths import TEMPLATES_DIR
 
 router = APIRouter()
@@ -73,22 +78,29 @@ def _gather_agent_prompts() -> list[dict]:
         if not prompt_path.exists():
             continue
         prompt_text = _read_agent_prompt(agent_dir.name)
-        prompts.append({
-            "name": agent_dir.name,
-            "prompt": prompt_text or "",
-            "path": str(prompt_path.relative_to(settings.project_root)),
-        })
+        prompts.append(
+            {
+                "name": agent_dir.name,
+                "prompt": prompt_text or "",
+                "path": str(prompt_path.relative_to(settings.project_root)),
+            }
+        )
     return prompts
 
 
 @router.get("/", response_class=HTMLResponse)
 async def settings_view(request: Request):
+    settings = get_settings()
     global_prompt = _read_global_prompt()
-    return templates.TemplateResponse("settings.html", {
-        "request": request,
-        "global_prompt": global_prompt,
-        "saved": request.query_params.get("saved"),
-    })
+    return templates.TemplateResponse(
+        "settings.html",
+        {
+            "request": request,
+            "global_prompt": global_prompt,
+            "settings": settings,
+            "saved": request.query_params.get("saved"),
+        },
+    )
 
 
 @router.post("/global-prompt", response_class=HTMLResponse)
@@ -96,6 +108,89 @@ async def save_global_prompt(global_prompt: str = Form(...)):
     path = _global_prompt_path()
     path.write_text(global_prompt)
     return RedirectResponse(url="/settings?saved=global", status_code=303)
+
+
+@router.post("/system")
+async def save_system_settings(
+    request: Request,
+    pool_size: int = Form(...),
+    job_timeout_minutes: int = Form(...),
+    producer_interval_seconds: int = Form(...),
+    max_iterate_per_stage: int = Form(...),
+    max_refinement_cycles: int = Form(...),
+    min_quality_score: float = Form(...),
+    max_budget_ideation: float = Form(...),
+    max_budget_implementation: float = Form(...),
+    max_budget_validation: float = Form(...),
+    max_budget_release: float = Form(...),
+    max_budget_watcher: float = Form(...),
+    model_tier_high: str = Form(...),
+    model_tier_low: str = Form(...),
+):
+    # Validate ranges
+    pool_size = max(1, min(20, pool_size))
+    job_timeout_minutes = max(1, job_timeout_minutes)
+    producer_interval_seconds = max(1, producer_interval_seconds)
+    max_iterate_per_stage = max(1, min(20, max_iterate_per_stage))
+    max_refinement_cycles = max(0, max_refinement_cycles)
+    min_quality_score = max(0.0, min(10.0, min_quality_score))
+    max_budget_ideation = max(0.0, max_budget_ideation)
+    max_budget_implementation = max(0.0, max_budget_implementation)
+    max_budget_validation = max(0.0, max_budget_validation)
+    max_budget_release = max(0.0, max_budget_release)
+    max_budget_watcher = max(0.0, max_budget_watcher)
+
+    old_settings = get_settings()
+
+    overlay = {
+        "pool_size": pool_size,
+        "job_timeout_minutes": job_timeout_minutes,
+        "producer_interval_seconds": producer_interval_seconds,
+        "max_iterate_per_stage": max_iterate_per_stage,
+        "max_refinement_cycles": max_refinement_cycles,
+        "min_quality_score": min_quality_score,
+        "max_budget_ideation": max_budget_ideation,
+        "max_budget_implementation": max_budget_implementation,
+        "max_budget_validation": max_budget_validation,
+        "max_budget_release": max_budget_release,
+        "max_budget_watcher": max_budget_watcher,
+        "model_tier_high": model_tier_high.strip(),
+        "model_tier_low": model_tier_low.strip(),
+    }
+
+    save_project_settings(overlay)
+    _invalidate_settings_cache()
+
+    new_settings = get_settings()
+    if new_settings.pool_size != old_settings.pool_size:
+        from trellis.web.api.app import restart_pool
+
+        asyncio.create_task(restart_pool(request.app))
+
+    return RedirectResponse(url="/settings?saved=system", status_code=303)
+
+
+@router.get("/api/settings")
+async def api_settings():
+    """JSON API for current effective settings."""
+    settings = get_settings()
+    return JSONResponse(
+        {
+            "pool_size": settings.pool_size,
+            "job_timeout_minutes": settings.job_timeout_minutes,
+            "producer_interval_seconds": settings.producer_interval_seconds,
+            "max_iterate_per_stage": settings.max_iterate_per_stage,
+            "max_refinement_cycles": settings.max_refinement_cycles,
+            "min_quality_score": settings.min_quality_score,
+            "max_budget_ideation": settings.max_budget_ideation,
+            "max_budget_implementation": settings.max_budget_implementation,
+            "max_budget_validation": settings.max_budget_validation,
+            "max_budget_release": settings.max_budget_release,
+            "max_budget_watcher": settings.max_budget_watcher,
+            "model_tier_high": settings.model_tier_high,
+            "model_tier_low": settings.model_tier_low,
+        }
+    )
 
 
 @router.post("/agent-prompt/{agent_name}", response_class=HTMLResponse)

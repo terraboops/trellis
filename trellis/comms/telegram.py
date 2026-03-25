@@ -16,6 +16,7 @@ def _md_to_html(text: str) -> str:
     Leaves everything else as plain text (no entity-parsing surprises).
     """
     import re
+
     # Code blocks first (```...```)
     text = re.sub(r"```(.*?)```", r"<pre>\1</pre>", text, flags=re.DOTALL)
     # Inline code
@@ -104,9 +105,7 @@ class TelegramNotifier:
         finally:
             self._pending.pop(question_id, None)
 
-    async def _handle_callback(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
-    ) -> None:
+    async def _handle_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         query = update.callback_query
         if not query or not query.data:
             return

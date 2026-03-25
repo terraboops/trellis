@@ -24,9 +24,7 @@ async def activity_page(request: Request):
     tracker = _get_tracker()
     tracker.clear_stale()
     running = tracker.get_running()
-    return templates.TemplateResponse(
-        "activity.html", {"request": request, "running": running}
-    )
+    return templates.TemplateResponse("activity.html", {"request": request, "running": running})
 
 
 @router.get("/api/activity")

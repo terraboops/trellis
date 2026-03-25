@@ -1,14 +1,9 @@
 """Tests for PoolManager result handling and release cap logic."""
 
-import json
-from collections import defaultdict
-from datetime import datetime, timezone, timedelta
-from pathlib import Path
-from unittest.mock import MagicMock, AsyncMock, patch, call
+from unittest.mock import MagicMock, patch
 
 import pytest
 
-from trellis.core.registry import AgentConfig, Registry
 from trellis.orchestrator.job_queue import JobQueue
 from trellis.orchestrator.pool import PoolManager
 from trellis.orchestrator.worker import RunResult, RunStatus
@@ -18,13 +13,20 @@ def _make_pool_for_handle_result(tmp_path):
     """Build a minimal PoolManager suitable for _handle_result tests."""
     pm = PoolManager.__new__(PoolManager)
     pm.settings = MagicMock(
-        pool_size=2, job_timeout_minutes=60,
-        producer_interval_seconds=10, project_root=tmp_path,
-        telegram_bot_token="test", telegram_chat_id="test",
+        pool_size=2,
+        job_timeout_minutes=60,
+        producer_interval_seconds=10,
+        project_root=tmp_path,
+        telegram_bot_token="test",
+        telegram_chat_id="test",
+        max_iterate_per_stage=3,
+        max_refinement_cycles=1,
+        min_quality_score=0.0,
     )
     pm.blackboard = MagicMock()
     pm.lock_manager = MagicMock()
     pm.roles = ["ideation", "implementation", "validation", "release"]
+
     # Pipeline agents: no cadence, no phase="*"
     def _get_agent(name):
         m = MagicMock()
@@ -32,11 +34,13 @@ def _make_pool_for_handle_result(tmp_path):
         m.phase = name
         m.max_concurrent = 1
         return m
+
     pm.registry = MagicMock()
     pm.registry.get_agent.side_effect = _get_agent
     pm.pool_dir = tmp_path / "pool"
     pm.pool_dir.mkdir(exist_ok=True)
     pm.workers = []
+    pm._job_kinds = {}
     return pm
 
 

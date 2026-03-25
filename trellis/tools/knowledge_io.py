@@ -25,9 +25,7 @@ def semantic_hash(predicates: list[list[str]]) -> str:
     "France's capital is Paris") produce identical predicates after
     normalization, yielding the same hash for deduplication.
     """
-    normalized = sorted(
-        tuple(p[i].lower().strip() for i in range(3)) for p in predicates
-    )
+    normalized = sorted(tuple(p[i].lower().strip() for i in range(3)) for p in predicates)
     content = json.dumps(normalized, sort_keys=True)
     return hashlib.sha256(content.encode()).hexdigest()[:8]
 
@@ -153,22 +151,15 @@ def format_for_prompt(objects: list[dict], max_entries: int = 20) -> str:
     return "\n\n---\n\n".join(parts)
 
 
-def search_by_predicates(
-    objects: list[dict], query_predicates: list[list[str]]
-) -> list[dict]:
+def search_by_predicates(objects: list[dict], query_predicates: list[list[str]]) -> list[dict]:
     """Find objects whose predicates overlap with the query predicates.
 
     Matching: any predicate triple in common after normalization.
     """
-    query_set = {
-        tuple(p[i].lower().strip() for i in range(3)) for p in query_predicates
-    }
+    query_set = {tuple(p[i].lower().strip() for i in range(3)) for p in query_predicates}
     results = []
     for obj in objects:
-        obj_set = {
-            tuple(p[i].lower().strip() for i in range(3))
-            for p in obj.get("predicates", [])
-        }
+        obj_set = {tuple(p[i].lower().strip() for i in range(3)) for p in obj.get("predicates", [])}
         if query_set & obj_set:
             results.append(obj)
     return results

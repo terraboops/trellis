@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 
 from claude_agent_sdk import AgentDefinition
 

@@ -22,10 +22,11 @@ FEEDBACK_PRIORITY_FACTOR = 0.9
 @dataclass
 class Job:
     """A unit of work for the pool scheduler."""
-    priority: float           # higher = runs first
-    kind: str                 # "pipeline" | "background" | "feedback"
-    role: str                 # agent name from registry
-    idea_id: str              # "__all__" for global agents
+
+    priority: float  # higher = runs first
+    kind: str  # "pipeline" | "background" | "feedback"
+    role: str  # agent name from registry
+    idea_id: str  # "__all__" for global agents
     enqueued_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 

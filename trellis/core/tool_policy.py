@@ -24,14 +24,14 @@ BASH_BLOCKLIST = [
     "security dump-keychain",
     "sudo ",
     "su ",
-    "osascript",       # AppleScript (can exfiltrate via UI)
-    "launchctl",       # launchd manipulation
+    "osascript",  # AppleScript (can exfiltrate via UI)
+    "launchctl",  # launchd manipulation
     "rm -rf /",
     "rm -rf ~",
     "pkill",
     "killall",
     "> /dev/",
-    "curl.*ssh",       # SSH key exfiltration via curl
+    "curl.*ssh",  # SSH key exfiltration via curl
 ]
 
 
@@ -56,7 +56,10 @@ def make_tool_policy(
         allowed_read_dirs: Paths the agent may read from.
         allowed_write_dirs: Paths the agent may write to.
     """
-    async def policy(tool_name: str, tool_input: dict, context) -> PermissionResultAllow | PermissionResultDeny:
+
+    async def policy(
+        tool_name: str, tool_input: dict, context
+    ) -> PermissionResultAllow | PermissionResultDeny:
         # --- Bash blocklist ---
         if tool_name == "Bash":
             cmd = tool_input.get("command", "")
@@ -64,7 +67,9 @@ def make_tool_policy(
                 if pattern in cmd:
                     logger.warning(
                         "Tool policy blocked Bash for role=%s: pattern=%r cmd=%r",
-                        role, pattern, cmd[:200],
+                        role,
+                        pattern,
+                        cmd[:200],
                     )
                     return PermissionResultDeny(
                         message=f"Blocked: '{pattern}' is not allowed. If this is needed, add it to sandbox_allowed_commands in the agent config."
@@ -78,7 +83,9 @@ def make_tool_policy(
                 if not any(_is_subpath(p, d) for d in allowed_read_dirs):
                     logger.warning(
                         "Tool policy blocked %s for role=%s: path=%s not in allowed dirs",
-                        tool_name, role, path_str,
+                        tool_name,
+                        role,
+                        path_str,
                     )
                     return PermissionResultDeny(
                         message=f"Read denied: '{path_str}' is outside allowed directories."
@@ -92,7 +99,9 @@ def make_tool_policy(
                 if not any(_is_subpath(p, d) for d in allowed_write_dirs):
                     logger.warning(
                         "Tool policy blocked %s for role=%s: path=%s not in allowed dirs",
-                        tool_name, role, path_str,
+                        tool_name,
+                        role,
+                        path_str,
                     )
                     return PermissionResultDeny(
                         message=f"Write denied: '{path_str}' is outside allowed directories."
@@ -120,7 +129,9 @@ def make_role_policy(role: str, idea_id: str, project_root: Path, blackboard_dir
     | watchers       | blackboard/                      | (none — MCP only)            |
     """
     idea_dir = blackboard_dir / idea_id if idea_id and idea_id != "__all__" else blackboard_dir
-    workspace_dir = project_root / "workspace" / idea_id if idea_id and idea_id != "__all__" else None
+    workspace_dir = (
+        project_root / "workspace" / idea_id if idea_id and idea_id != "__all__" else None
+    )
 
     if role in ("implementation", "release"):
         read_dirs = [project_root, blackboard_dir]

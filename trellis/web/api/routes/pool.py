@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
@@ -13,7 +12,6 @@ from trellis.config import get_settings
 from trellis.web.api.filters import setup_filters
 from trellis.web.api.paths import TEMPLATES_DIR
 from trellis.core.blackboard import Blackboard
-from trellis.core.registry import load_registry
 
 router = APIRouter()
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
@@ -189,10 +187,13 @@ async def pool_status(request: Request):
     _compute_idle_reasons(state)
     _enrich_cadence_trackers(state)
 
-    return templates.TemplateResponse("pool.html", {
-        "request": request,
-        "state": state,
-    })
+    return templates.TemplateResponse(
+        "pool.html",
+        {
+            "request": request,
+            "state": state,
+        },
+    )
 
 
 @router.get("/api/state")

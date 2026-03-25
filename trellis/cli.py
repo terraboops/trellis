@@ -22,14 +22,21 @@ def _version_callback(value: bool) -> None:
         raise typer.Exit()
 
 
-app = typer.Typer(name="trellis", help="Agentic pipeline platform — design agent teams that take ideas from concept to launch")
+app = typer.Typer(
+    name="trellis",
+    help="Agentic pipeline platform — design agent teams that take ideas from concept to launch",
+)
 
 
 @app.callback(invoke_without_command=True)
 def main(
-    version: bool = typer.Option(False, "--version", "-v", callback=_version_callback, is_eager=True, help="Show version"),
+    version: bool = typer.Option(
+        False, "--version", "-v", callback=_version_callback, is_eager=True, help="Show version"
+    ),
 ) -> None:
     pass
+
+
 console = Console()
 
 
@@ -73,10 +80,15 @@ def init(
     (target / "workspace").mkdir(exist_ok=True)
     (target / "pool").mkdir(exist_ok=True)
 
-    marker.write_text(json.dumps({
-        "version": "0.2.0",
-        "created": datetime.now(timezone.utc).isoformat(),
-    }, indent=2))
+    marker.write_text(
+        json.dumps(
+            {
+                "version": "0.2.0",
+                "created": datetime.now(timezone.utc).isoformat(),
+            },
+            indent=2,
+        )
+    )
 
     console.print(f"[green]Created Trellis project in {target}[/green]")
     try:
@@ -197,7 +209,9 @@ def kill(idea_id: str = typer.Argument(help="Idea slug to kill")) -> None:
 
 @app.command()
 def evolve(
-    dry_run: bool = typer.Option(False, "--dry-run", help="Show what would change without applying"),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Show what would change without applying"
+    ),
     agent: str = typer.Option("", "--agent", help="Curate a single agent's knowledge"),
     no_llm: bool = typer.Option(False, "--no-llm", help="Print stats only, no LLM curation"),
 ) -> None:
@@ -212,6 +226,7 @@ def evolve(
             try:
                 from trellis.comms.telegram import TelegramNotifier
                 from trellis.comms.notifications import NotificationDispatcher
+
                 telegram = TelegramNotifier(settings.telegram_bot_token, settings.telegram_chat_id)
                 dispatcher = NotificationDispatcher(telegram)
             except Exception:
@@ -230,7 +245,9 @@ def evolve(
             table.add_column("No Justification", justify="right")
             table.add_column("No Predicates", justify="right")
             for a, s in stats.items():
-                table.add_row(a, str(s["count"]), str(s["no_justification"]), str(s["no_predicates"]))
+                table.add_row(
+                    a, str(s["count"]), str(s["no_justification"]), str(s["no_predicates"])
+                )
             console.print(table)
             return
 
@@ -275,7 +292,9 @@ def migrate_knowledge(
             continue
         count = migrate_md_to_objects(knowledge_dir)
         if count > 0:
-            console.print(f"  [green]{agent_dir.name}[/green]: {count} objects created, original backed up to learnings.md.bak")
+            console.print(
+                f"  [green]{agent_dir.name}[/green]: {count} objects created, original backed up to learnings.md.bak"
+            )
             total += count
         else:
             console.print(f"  [dim]{agent_dir.name}[/dim]: no sections found")
@@ -296,7 +315,9 @@ def run() -> None:
 
         pool = PoolManager(settings)
         console.print("[green]Starting worker pool...[/green]")
-        console.print(f"[dim]Pool size: {settings.pool_size}, job timeout: {settings.job_timeout_minutes}m[/dim]")
+        console.print(
+            f"[dim]Pool size: {settings.pool_size}, job timeout: {settings.job_timeout_minutes}m[/dim]"
+        )
         console.print("[dim]Press Ctrl+C to stop.[/dim]")
         await pool.run()
 
@@ -329,7 +350,7 @@ def _start_daemon(settings, host, port, no_pool):
     pid_path.write_text(str(proc.pid))
     console.print(f"[green]Started trellis (PID {proc.pid})[/green]")
     console.print(f"  Log: {log_path}")
-    console.print(f"  Stop: trellis serve --stop")
+    console.print("  Stop: trellis serve --stop")
 
 
 def _stop_daemon(settings):
@@ -484,21 +505,27 @@ def upgrade(
                 continue
             if all_:
                 project_file.write_text(default_content)
-                console.print(f"  [green]Updated[/green]")
+                console.print("  [green]Updated[/green]")
             elif is_tty:
                 console.print(diff_text)
                 if typer.confirm("  Apply this change?"):
                     project_file.write_text(default_content)
-                    console.print(f"  [green]Updated[/green]")
+                    console.print("  [green]Updated[/green]")
 
     console.print("\n[green]Agent upgrade complete.[/green]")
 
 
 @app.command()
 def migrate(
-    registry: str = typer.Option("", "--registry", "-r", help="Path to registry.yaml (default: project registry)"),
-    dry_run: bool = typer.Option(False, "--dry-run", help="Show what would change without applying"),
-    yes: bool = typer.Option(False, "--yes", "-y", help="Auto-apply mechanical migrations without prompting"),
+    registry: str = typer.Option(
+        "", "--registry", "-r", help="Path to registry.yaml (default: project registry)"
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Show what would change without applying"
+    ),
+    yes: bool = typer.Option(
+        False, "--yes", "-y", help="Auto-apply mechanical migrations without prompting"
+    ),
 ) -> None:
     """Check and apply registry.yaml migrations for new Trellis versions."""
     import sys
@@ -576,16 +603,16 @@ def migrate(
 @app.command(name="migrate-project")
 def migrate_project(
     directory: str = typer.Argument(".", help="Project directory to migrate"),
-    dry_run: bool = typer.Option(False, "--dry-run", help="Show what would change without applying"),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Show what would change without applying"
+    ),
 ) -> None:
     """Migrate an incubator project to Trellis.
 
     Renames .incubator → .trellis, updates pool files, registry paths,
     and reinstalls the package in the project venv if one exists.
     """
-    import json
     import subprocess
-    import sys
     from pathlib import Path
 
     target = Path(directory).resolve()
@@ -672,25 +699,27 @@ def migrate_project(
         package_root = Path(__file__).resolve().parent.parent
         result = subprocess.run(
             [str(venv_python), "-m", "pip", "install", "--quiet", str(package_root)],
-            capture_output=True, text=True,
+            capture_output=True,
+            text=True,
         )
         if result.returncode == 0:
             console.print("  [green]✓[/green] trellis installed in .venv")
             # Uninstall old incubator package if present
             subprocess.run(
                 [str(venv_python), "-m", "pip", "uninstall", "-y", "--quiet", "incubator"],
-                capture_output=True, text=True,
+                capture_output=True,
+                text=True,
             )
         else:
-            console.print(f"  [yellow]⚠ venv install failed — run manually:[/yellow]")
-            console.print(f"    pip install trellis")
+            console.print("  [yellow]⚠ venv install failed — run manually:[/yellow]")
+            console.print("    pip install trellis")
             if result.stderr:
                 for line in result.stderr.strip().split("\n")[-3:]:
                     console.print(f"    [dim]{line}[/dim]")
 
-    console.print(f"\n[bold green]Migration complete.[/bold green]")
+    console.print("\n[bold green]Migration complete.[/bold green]")
     console.print(f"\n  cd {target}")
-    console.print(f"  trellis serve")
+    console.print("  trellis serve")
 
 
 if __name__ == "__main__":

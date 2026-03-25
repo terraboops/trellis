@@ -39,6 +39,7 @@ async def _broadcast(event_type: str, **kwargs):
     """Best-effort broadcast to WebSocket clients."""
     try:
         from trellis.web.api.websocket import broadcast_event
+
         await broadcast_event(event_type, kwargs)
     except Exception:
         pass  # Web server may not be running
@@ -69,6 +70,7 @@ class Orchestrator:
         # Set default pipeline config
         from trellis.core.blackboard import DEFAULT_PIPELINE
         import json
+
         pipeline = json.loads(json.dumps(DEFAULT_PIPELINE))
         self.blackboard.set_pipeline(idea_id, pipeline)
 
@@ -105,12 +107,15 @@ class Orchestrator:
                     if max_refinement_cycles != 0 and prior_releases >= max_refinement_cycles:
                         logger.info(
                             "%s reached max refinement cycles (%d), ending continuous run",
-                            idea_id, max_refinement_cycles,
+                            idea_id,
+                            max_refinement_cycles,
                         )
                         break
                     logger.info(
                         "Starting refinement cycle for %s (release %d/%d)",
-                        idea_id, prior_releases, max_refinement_cycles if max_refinement_cycles != 0 else "unlimited",
+                        idea_id,
+                        prior_releases,
+                        max_refinement_cycles if max_refinement_cycles != 0 else "unlimited",
                     )
                     await self._transition(idea_id, Phase.IDEATION)
                 else:
@@ -378,8 +383,11 @@ class Orchestrator:
     async def score_priorities(self) -> None:
         """Score all active ideas using the Agent SDK for prioritization."""
         from claude_agent_sdk import (
-            query, ClaudeAgentOptions,
-            AssistantMessage, ResultMessage, TextBlock,
+            query,
+            ClaudeAgentOptions,
+            AssistantMessage,
+            ResultMessage,
+            TextBlock,
         )
 
         active = self._get_active_ideas()
@@ -433,7 +441,7 @@ class Orchestrator:
                     if isinstance(message, ResultMessage) and message.result:
                         result_text = message.result
                     elif isinstance(message, AssistantMessage):
-                        for block in (message.content or []):
+                        for block in message.content or []:
                             if isinstance(block, TextBlock) and block.text:
                                 result_text = block.text
 
@@ -465,8 +473,14 @@ class Orchestrator:
                     priority_probability=probability,
                     priority_reasoning=scores.get("reasoning", ""),
                 )
-                logger.info("Scored %s: priority=%.1f (I=%d V=%d P=%d)",
-                            idea_id, priority_score, impact, values, probability)
+                logger.info(
+                    "Scored %s: priority=%.1f (I=%d V=%d P=%d)",
+                    idea_id,
+                    priority_score,
+                    impact,
+                    values,
+                    probability,
+                )
             except Exception as e:
                 logger.error("Failed to score %s: %s", idea_id, e)
 
@@ -504,8 +518,13 @@ class Orchestrator:
                 to_iterate = active[:MAX_ACTIVE_IDEAS]
 
             idea_ids = [s["id"] for s in to_iterate]
-            logger.info("Loop %d: iterating %d/%d ideas: %s",
-                        loop_count, len(to_iterate), len(active), idea_ids)
+            logger.info(
+                "Loop %d: iterating %d/%d ideas: %s",
+                loop_count,
+                len(to_iterate),
+                len(active),
+                idea_ids,
+            )
 
             for status in to_iterate:
                 idea_id = status["id"]

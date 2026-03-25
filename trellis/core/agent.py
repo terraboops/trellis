@@ -12,7 +12,6 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
-import anyio
 from claude_agent_sdk import (
     AgentDefinition,
     AssistantMessage,
@@ -22,7 +21,6 @@ from claude_agent_sdk import (
     SystemMessage,
     TextBlock,
     ToolUseBlock,
-    ToolResultBlock,
 )
 
 from trellis.comms.notifications import NotificationDispatcher
@@ -49,6 +47,7 @@ logger = logging.getLogger(__name__)
 # process's keychain entry to one the agent's config dir can find.
 # ---------------------------------------------------------------------------
 
+
 def _keychain_service_hashed(config_dir: str) -> str:
     """Legacy hashed service name: Claude Code-credentials-<hash>."""
     h = hashlib.sha256(config_dir.encode()).hexdigest()[:8]
@@ -62,7 +61,8 @@ def _read_keychain_credential(service: str) -> str | None:
     """Read a credential from macOS Keychain. Returns None on failure."""
     read = subprocess.run(
         ["security", "find-generic-password", "-s", service, "-w"],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     )
     if read.returncode == 0:
         return read.stdout.strip()
@@ -88,8 +88,7 @@ def _ensure_agent_auth(agent_config: Path, project_root: Path) -> None:
         credential = _read_keychain_credential(_keychain_service_hashed(parent_dir))
     if credential is None:
         logger.warning(
-            "Could not read parent keychain credential "
-            "(tried '%s' and '%s')",
+            "Could not read parent keychain credential (tried '%s' and '%s')",
             KEYCHAIN_SERVICE_PLAIN,
             _keychain_service_hashed(parent_dir),
         )
@@ -101,13 +100,18 @@ def _ensure_agent_auth(agent_config: Path, project_root: Path) -> None:
     for svc in (KEYCHAIN_SERVICE_PLAIN, agent_hashed_svc):
         write = subprocess.run(
             [
-                "security", "add-generic-password",
-                "-s", svc,
-                "-a", account,
-                "-w", credential,
+                "security",
+                "add-generic-password",
+                "-s",
+                svc,
+                "-a",
+                account,
+                "-w",
+                credential,
                 "-U",  # update if exists
             ],
-            capture_output=True, text=True,
+            capture_output=True,
+            text=True,
         )
         if write.returncode != 0:
             logger.debug("Keychain write to '%s' failed: %s", svc, write.stderr.strip())
@@ -222,15 +226,19 @@ class BaseAgent(ABC):
 
         if isinstance(message, AssistantMessage):
             blocks = []
-            for block in (message.content or []):
+            for block in message.content or []:
                 if isinstance(block, TextBlock):
                     blocks.append({"type": "text", "text": block.text})
                 elif isinstance(block, ToolUseBlock):
-                    blocks.append({
-                        "type": "tool_use",
-                        "name": block.name,
-                        "input": block.input if isinstance(block.input, (dict, str)) else str(block.input),
-                    })
+                    blocks.append(
+                        {
+                            "type": "tool_use",
+                            "name": block.name,
+                            "input": block.input
+                            if isinstance(block.input, (dict, str))
+                            else str(block.input),
+                        }
+                    )
                 elif hasattr(block, "type"):
                     # Thinking blocks, etc.
                     d = {"type": block.type}
@@ -254,7 +262,9 @@ class BaseAgent(ABC):
                 "result": message.result,
                 "stop_reason": message.stop_reason,
                 "cost_usd": message.total_cost_usd,
-                "usage": message.usage if isinstance(getattr(message, "usage", None), dict) else None,
+                "usage": message.usage
+                if isinstance(getattr(message, "usage", None), dict)
+                else None,
                 "timestamp": ts,
             }
 
@@ -266,7 +276,9 @@ class BaseAgent(ABC):
             "timestamp": ts,
         }
 
-    def _save_transcript(self, idea_id: str, transcript: list[dict], prompt: str, system_prompt: str) -> None:
+    def _save_transcript(
+        self, idea_id: str, transcript: list[dict], prompt: str, system_prompt: str
+    ) -> None:
         """Save the full agent transcript to the blackboard."""
         log_dir = self.blackboard.idea_dir(idea_id) / "agent-logs"
         log_dir.mkdir(exist_ok=True)
@@ -289,13 +301,17 @@ class BaseAgent(ABC):
         log_file.write_text(json.dumps(log_data, indent=2, default=str))
         logger.info("Saved transcript to %s", log_file)
 
-    async def run(self, idea_id: str, max_turns_override: int | None = None, deadline: datetime | None = None) -> AgentResult:
+    async def run(
+        self, idea_id: str, max_turns_override: int | None = None, deadline: datetime | None = None
+    ) -> AgentResult:
         """Run this agent against an idea."""
         logger.info("Running agent '%s' on idea '%s'", self.config.name, idea_id)
 
         # Global agents skip activity tracking (no specific idea to track)
         if idea_id == "__all__":
-            return await self._run_inner(idea_id, max_turns_override=max_turns_override, deadline=deadline)
+            return await self._run_inner(
+                idea_id, max_turns_override=max_turns_override, deadline=deadline
+            )
 
         # Register with activity tracker
         tracker = ActivityTracker(self.blackboard.base_dir.parent / ".activity.json")
@@ -311,7 +327,9 @@ class BaseAgent(ABC):
             logger.warning("Failed to register activity start", exc_info=True)
 
         try:
-            return await self._run_inner(idea_id, max_turns_override=max_turns_override, deadline=deadline)
+            return await self._run_inner(
+                idea_id, max_turns_override=max_turns_override, deadline=deadline
+            )
         finally:
             try:
                 tracker.stop(self.config.name, idea_id)
@@ -350,15 +368,16 @@ class BaseAgent(ABC):
             return ""
 
         files = sorted(
-            f for f in idea_dir.iterdir()
-            if f.is_file() and f.name not in ("status.json",)
+            f for f in idea_dir.iterdir() if f.is_file() and f.name not in ("status.json",)
         )
         if not files:
             return ""
 
         lines = ["\n\n## Prior Work on the Blackboard"]
-        lines.append("The following files already exist for this idea. "
-                      "Read the ones relevant to your role before planning your work.\n")
+        lines.append(
+            "The following files already exist for this idea. "
+            "Read the ones relevant to your role before planning your work.\n"
+        )
 
         for f in files:
             size_kb = f.stat().st_size / 1024
@@ -366,8 +385,10 @@ class BaseAgent(ABC):
             lines.append(f"- `{f.name}` ({suffix}, {size_kb:.1f} KB)")
 
         lines.append("")
-        lines.append("Use `read_blackboard` to read any file above. "
-                      "Build on prior work — don't duplicate it.")
+        lines.append(
+            "Use `read_blackboard` to read any file above. "
+            "Build on prior work — don't duplicate it."
+        )
         return "\n".join(lines)
 
     def _build_feedback_context(self, idea_id: str) -> str:
@@ -384,7 +405,7 @@ class BaseAgent(ABC):
             "3. If relevant, update the artifact to address the feedback",
             "4. Call `acknowledge_feedback` with the feedback ID and a brief note on what you did",
             "5. If the feedback is outside your expertise, still acknowledge it with a note like "
-            "\"Not in my area of expertise — this is better addressed by [role]\"",
+            '"Not in my area of expertise — this is better addressed by [role]"',
             "",
         ]
         for entry in pending:
@@ -451,18 +472,23 @@ class BaseAgent(ABC):
             cli_path = Path(__file__).resolve().parent.parent / "nono-wrapper.sh"
             logger.info(
                 "Sandbox enabled for agent '%s' on '%s', flags: %s",
-                self.config.name, idea_id, nono_flags,
+                self.config.name,
+                idea_id,
+                nono_flags,
             )
             return cli_path
         except Exception as e:
             logger.error(
                 "Failed to build nono sandbox flags for agent '%s': %s. "
                 "Falling back to unsandboxed mode.",
-                self.config.name, e,
+                self.config.name,
+                e,
             )
             return None
 
-    async def _run_global(self, max_turns_override: int | None = None, deadline: datetime | None = None) -> AgentResult:
+    async def _run_global(
+        self, max_turns_override: int | None = None, deadline: datetime | None = None
+    ) -> AgentResult:
         """Run in global mode (phase='*') — iterate over all ideas, no idea-specific context."""
         bb_server = create_blackboard_mcp_server(self.blackboard, "__all__")
         tg_server = create_telegram_mcp_server(self.dispatcher, "__all__")
@@ -495,12 +521,16 @@ class BaseAgent(ABC):
             max_turns=max_turns_override or self.config.max_turns,
             model=self.config.model,
             mcp_servers=mcp_servers,
-            permission_mode=self.config.permission_mode if not self.config.sandbox_enabled else None,
+            permission_mode=self.config.permission_mode
+            if not self.config.sandbox_enabled
+            else None,
             env=env,
             cli_path=cli_path,
             can_use_tool=make_role_policy(
-                self.config.name, "__all__",
-                self.project_root, self.blackboard.base_dir,
+                self.config.name,
+                "__all__",
+                self.project_root,
+                self.blackboard.base_dir,
             ),
             hooks=make_audit_hooks(self.config.name, "__all__", self.project_root),
         )
@@ -529,7 +559,9 @@ class BaseAgent(ABC):
                         cost = message.total_cost_usd or 0.0
                         logger.info(
                             "Agent '%s' completed global run (stop: %s, cost: $%.2f)",
-                            self.config.name, message.stop_reason, cost,
+                            self.config.name,
+                            message.stop_reason,
+                            cost,
                         )
                         return AgentResult(
                             success=True,
@@ -543,7 +575,9 @@ class BaseAgent(ABC):
 
         return AgentResult(success=True, output="\n".join(output_parts), transcript=transcript)
 
-    async def _run_inner(self, idea_id: str, max_turns_override: int | None = None, deadline: datetime | None = None) -> AgentResult:
+    async def _run_inner(
+        self, idea_id: str, max_turns_override: int | None = None, deadline: datetime | None = None
+    ) -> AgentResult:
         """Inner run logic, wrapped by activity tracking."""
 
         # Global agent mode: no idea-specific context
@@ -557,9 +591,13 @@ class BaseAgent(ABC):
         # Build MCP servers for custom tools
         # Cadence agents (watchers) get a restricted MCP with read-only + register_feedback
         if self.config.cadence:
-            bb_server = create_watcher_mcp_server(self.blackboard, idea_id, agent_role=self.config.name)
+            bb_server = create_watcher_mcp_server(
+                self.blackboard, idea_id, agent_role=self.config.name
+            )
         else:
-            bb_server = create_blackboard_mcp_server(self.blackboard, idea_id, agent_role=self.config.name)
+            bb_server = create_blackboard_mcp_server(
+                self.blackboard, idea_id, agent_role=self.config.name
+            )
         tg_server = create_telegram_mcp_server(self.dispatcher, idea_id)
         ev_server = create_evolution_mcp_server(self.get_knowledge_dir())
 
@@ -593,6 +631,7 @@ class BaseAgent(ABC):
         # Load accumulated knowledge (global agent knowledge + per-idea knowledge)
         knowledge_context = ""
         from trellis.tools.knowledge_io import load_objects, format_for_prompt
+
         knowledge_objects = load_objects(self.get_knowledge_dir())
         if knowledge_objects:
             knowledge_context += (
@@ -600,9 +639,7 @@ class BaseAgent(ABC):
             )
         idea_knowledge = self._load_idea_knowledge(idea_id)
         if idea_knowledge:
-            knowledge_context += (
-                f"\n\n## Your Previous Notes on This Idea\n{idea_knowledge}"
-            )
+            knowledge_context += f"\n\n## Your Previous Notes on This Idea\n{idea_knowledge}"
 
         # Check if this is a refinement run
         is_refining = self._is_refinement_run(idea_id)
@@ -675,12 +712,16 @@ class BaseAgent(ABC):
             max_turns=max_turns_override or self.config.max_turns,
             model=self.config.model,
             mcp_servers=mcp_servers,
-            permission_mode=self.config.permission_mode if not self.config.sandbox_enabled else None,
+            permission_mode=self.config.permission_mode
+            if not self.config.sandbox_enabled
+            else None,
             env=env,
             cli_path=cli_path,
             can_use_tool=make_role_policy(
-                self.config.name, idea_id,
-                self.project_root, self.blackboard.base_dir,
+                self.config.name,
+                idea_id,
+                self.project_root,
+                self.blackboard.base_dir,
             ),
             hooks=make_audit_hooks(self.config.name, idea_id, self.project_root),
         )

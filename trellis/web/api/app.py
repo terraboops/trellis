@@ -12,6 +12,7 @@ from pathlib import Path
 # are available to agent auth code
 from dotenv import load_dotenv
 from trellis.config import find_project_root
+
 try:
     load_dotenv(find_project_root() / ".env", override=False)
 except FileNotFoundError:
@@ -46,6 +47,36 @@ def _pool_enabled_flag() -> bool:
     return _pool_enabled
 
 
+async def restart_pool(app: FastAPI) -> None:
+    """Gracefully restart the worker pool with fresh settings.
+
+    Called when pool_size changes via the settings page.
+    """
+    pool_manager = getattr(app.state, "pool_manager", None)
+    pool_task = getattr(app.state, "pool_task", None)
+
+    # Stop existing pool
+    if pool_manager:
+        pool_manager.stop()
+        if pool_task and not pool_task.done():
+            pool_task.cancel()
+            try:
+                await pool_task
+            except asyncio.CancelledError:
+                pass
+        logger.info("Worker pool stopped for restart")
+
+    # Start new pool with fresh settings
+    from trellis.orchestrator.pool import PoolManager
+
+    settings = get_settings()
+    new_manager = PoolManager(settings)
+    new_task = asyncio.create_task(new_manager.run())
+    app.state.pool_manager = new_manager
+    app.state.pool_task = new_task
+    logger.info("Worker pool restarted with pool_size=%d", settings.pool_size)
+
+
 def create_app() -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -53,10 +84,12 @@ def create_app() -> FastAPI:
         pool_manager = None
         if _pool_enabled:
             from trellis.orchestrator.pool import PoolManager
+
             settings = get_settings()
             pool_manager = PoolManager(settings)
             pool_task = asyncio.create_task(pool_manager.run())
             app.state.pool_manager = pool_manager
+            app.state.pool_task = pool_task
             logger.info("Worker pool started")
         yield
         if pool_manager:

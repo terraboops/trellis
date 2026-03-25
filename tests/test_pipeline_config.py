@@ -1,7 +1,6 @@
 """Tests for per-idea pipeline configuration."""
 
 import json
-from pathlib import Path
 
 import pytest
 
@@ -24,10 +23,17 @@ def bb(tmp_path):
     ideas_dir = tmp_path / "ideas"
     template_dir = ideas_dir / "_template"
     template_dir.mkdir(parents=True)
-    (template_dir / "status.json").write_text(json.dumps({
-        "id": "", "title": "", "phase": "submitted",
-        "created_at": "", "updated_at": "",
-    }))
+    (template_dir / "status.json").write_text(
+        json.dumps(
+            {
+                "id": "",
+                "title": "",
+                "phase": "submitted",
+                "created_at": "",
+                "updated_at": "",
+            }
+        )
+    )
     (template_dir / "idea.md").write_text("# Idea\n")
     return Blackboard(ideas_dir)
 
@@ -94,14 +100,20 @@ def test_next_stage_iterate_only_affects_that_stage(bb):
     """iterate on ideation doesn't prevent implementation from being next after ideation proceeds."""
     idea_id = bb.create_idea("Test Idea", "Description")
     bb.set_pipeline(idea_id, DEFAULT_PIPELINE)
-    bb.update_status(idea_id, last_serviced_by={
-        "ideation": "2026-03-11T10:00:00Z",
-        "implementation": "2026-03-11T11:00:00Z",
-    })
-    bb.update_status(idea_id, stage_results={
-        "ideation": "proceed",
-        "implementation": "iterate",
-    })
+    bb.update_status(
+        idea_id,
+        last_serviced_by={
+            "ideation": "2026-03-11T10:00:00Z",
+            "implementation": "2026-03-11T11:00:00Z",
+        },
+    )
+    bb.update_status(
+        idea_id,
+        stage_results={
+            "ideation": "proceed",
+            "implementation": "iterate",
+        },
+    )
     # Ideation is done (proceed), implementation needs re-run (iterate)
     assert bb.next_stage(idea_id) == "implementation"
 
@@ -110,18 +122,24 @@ def test_next_stage_returns_none_when_pipeline_complete(bb):
     """next_stage() returns None when all stages are done."""
     idea_id = bb.create_idea("Test Idea", "Description")
     bb.set_pipeline(idea_id, DEFAULT_PIPELINE)
-    bb.update_status(idea_id, last_serviced_by={
-        "ideation": "2026-03-11T10:00:00Z",
-        "implementation": "2026-03-11T11:00:00Z",
-        "validation": "2026-03-11T12:00:00Z",
-        "release": "2026-03-11T13:00:00Z",
-    })
-    bb.update_status(idea_id, stage_results={
-        "ideation": "proceed",
-        "implementation": "proceed",
-        "validation": "proceed",
-        "release": "proceed",
-    })
+    bb.update_status(
+        idea_id,
+        last_serviced_by={
+            "ideation": "2026-03-11T10:00:00Z",
+            "implementation": "2026-03-11T11:00:00Z",
+            "validation": "2026-03-11T12:00:00Z",
+            "release": "2026-03-11T13:00:00Z",
+        },
+    )
+    bb.update_status(
+        idea_id,
+        stage_results={
+            "ideation": "proceed",
+            "implementation": "proceed",
+            "validation": "proceed",
+            "release": "proceed",
+        },
+    )
     assert bb.next_stage(idea_id) is None
 
 
@@ -136,18 +154,24 @@ def test_is_ready_true_when_all_stages_done(bb):
     """is_ready() is True when all stages have been serviced."""
     idea_id = bb.create_idea("Test Idea", "Description")
     bb.set_pipeline(idea_id, DEFAULT_PIPELINE)
-    bb.update_status(idea_id, last_serviced_by={
-        "ideation": "2026-03-11T10:00:00Z",
-        "implementation": "2026-03-11T11:00:00Z",
-        "validation": "2026-03-11T12:00:00Z",
-        "release": "2026-03-11T13:00:00Z",
-    })
-    bb.update_status(idea_id, stage_results={
-        "ideation": "proceed",
-        "implementation": "proceed",
-        "validation": "proceed",
-        "release": "proceed",
-    })
+    bb.update_status(
+        idea_id,
+        last_serviced_by={
+            "ideation": "2026-03-11T10:00:00Z",
+            "implementation": "2026-03-11T11:00:00Z",
+            "validation": "2026-03-11T12:00:00Z",
+            "release": "2026-03-11T13:00:00Z",
+        },
+    )
+    bb.update_status(
+        idea_id,
+        stage_results={
+            "ideation": "proceed",
+            "implementation": "proceed",
+            "validation": "proceed",
+            "release": "proceed",
+        },
+    )
     assert bb.is_ready(idea_id) is True
 
 

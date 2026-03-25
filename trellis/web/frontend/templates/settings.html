@@ -6,17 +6,126 @@
     <span class="text-[#a690cc]">{{ icon('settings', 22) }}</span>
     <div>
         <h1 class="text-[1.15rem] font-medium text-[#3b3530] mb-0.5">Settings</h1>
-        <p class="text-[0.8rem] text-[#8a8074]">Edit the global system prompt. Per-agent prompts are on each <a href="/agents" class="underline">agent's detail page</a>.</p>
+        <p class="text-[0.8rem] text-[#8a8074]">System configuration and global prompt. Per-agent prompts are on each <a href="/agents" class="underline">agent's detail page</a>.</p>
     </div>
 </div>
 
 {% if saved %}
 <div class="mb-5 px-4 py-2.5 rounded-xl bg-[#e3ede3] border border-[#c8dcc8] text-[0.8rem] text-[#2c5e2c] font-medium"
      id="save-banner">
-    Saved{% if saved != 'global' %}: {{ saved }}{% endif %} prompt updated successfully.
+    {% if saved == 'system' %}System settings saved.{% elif saved == 'global' %}Global prompt updated.{% else %}{{ saved }} prompt updated.{% endif %}
 </div>
 <script>setTimeout(function(){ var el = document.getElementById('save-banner'); if(el) el.style.display='none'; }, 3000);</script>
 {% endif %}
+
+<!-- ── System Settings ── -->
+<section class="mb-8">
+    <form method="POST" action="/settings/system">
+        <!-- Pool & Scheduling -->
+        <div class="card p-6 mb-4">
+            <h2 class="text-[0.92rem] font-medium text-[#3b3530] mb-1">Pool & Scheduling</h2>
+            <p class="text-[0.75rem] text-[#b0a898] mb-4">Worker pool, timeouts, and iteration limits.</p>
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div>
+                    <label class="block text-[0.78rem] font-medium text-[#544d43] mb-1">
+                        Pool size
+                        <span class="ml-1 text-[0.62rem] font-normal text-white bg-[#c4956a] px-1.5 py-0.5 rounded-full">restart required</span>
+                    </label>
+                    <input type="number" name="pool_size" value="{{ settings.pool_size }}" min="1" max="20"
+                           class="w-full px-3 py-2 rounded-lg text-[0.84rem] bg-[#faf9f6] border border-[#eae6df] text-[#3b3530]">
+                </div>
+                <div>
+                    <label class="block text-[0.78rem] font-medium text-[#544d43] mb-1">Job timeout (minutes)</label>
+                    <input type="number" name="job_timeout_minutes" value="{{ settings.job_timeout_minutes }}" min="1"
+                           class="w-full px-3 py-2 rounded-lg text-[0.84rem] bg-[#faf9f6] border border-[#eae6df] text-[#3b3530]">
+                </div>
+                <div>
+                    <label class="block text-[0.78rem] font-medium text-[#544d43] mb-1">Producer interval (seconds)</label>
+                    <input type="number" name="producer_interval_seconds" value="{{ settings.producer_interval_seconds }}" min="1"
+                           class="w-full px-3 py-2 rounded-lg text-[0.84rem] bg-[#faf9f6] border border-[#eae6df] text-[#3b3530]">
+                </div>
+                <div>
+                    <label class="block text-[0.78rem] font-medium text-[#544d43] mb-1">Max agent iterations</label>
+                    <p class="text-[0.68rem] text-[#b0a898] mb-1">Before human review per stage</p>
+                    <input type="number" name="max_iterate_per_stage" value="{{ settings.max_iterate_per_stage }}" min="1" max="20"
+                           class="w-full px-3 py-2 rounded-lg text-[0.84rem] bg-[#faf9f6] border border-[#eae6df] text-[#3b3530]">
+                </div>
+                <div>
+                    <label class="block text-[0.78rem] font-medium text-[#544d43] mb-1">Max refinement cycles</label>
+                    <p class="text-[0.68rem] text-[#b0a898] mb-1">Default max refinement loops. 0 = unlimited</p>
+                    <input type="number" name="max_refinement_cycles" value="{{ settings.max_refinement_cycles }}" min="0"
+                           class="w-full px-3 py-2 rounded-lg text-[0.84rem] bg-[#faf9f6] border border-[#eae6df] text-[#3b3530]">
+                </div>
+            </div>
+        </div>
+
+        <!-- Quality Gate -->
+        <div class="card p-6 mb-4">
+            <h2 class="text-[0.92rem] font-medium text-[#3b3530] mb-1">Quality Gate</h2>
+            <p class="text-[0.75rem] text-[#b0a898] mb-4">Minimum priority score to auto-release. Ideas below this enter human review. 0 = disabled.</p>
+            <div class="max-w-xs">
+                <label class="block text-[0.78rem] font-medium text-[#544d43] mb-1">Minimum quality score (0–10)</label>
+                <input type="number" name="min_quality_score" value="{{ settings.min_quality_score }}" min="0" max="10" step="0.1"
+                       class="w-full px-3 py-2 rounded-lg text-[0.84rem] bg-[#faf9f6] border border-[#eae6df] text-[#3b3530]">
+            </div>
+        </div>
+
+        <!-- Budget Limits -->
+        <div class="card p-6 mb-4">
+            <h2 class="text-[0.92rem] font-medium text-[#3b3530] mb-1">Budget Limits</h2>
+            <p class="text-[0.75rem] text-[#b0a898] mb-4">Maximum USD spend per agent run.</p>
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div>
+                    <label class="block text-[0.78rem] font-medium text-[#544d43] mb-1">Ideation</label>
+                    <input type="number" name="max_budget_ideation" value="{{ settings.max_budget_ideation }}" min="0" step="0.01"
+                           class="w-full px-3 py-2 rounded-lg text-[0.84rem] bg-[#faf9f6] border border-[#eae6df] text-[#3b3530]">
+                </div>
+                <div>
+                    <label class="block text-[0.78rem] font-medium text-[#544d43] mb-1">Implementation</label>
+                    <input type="number" name="max_budget_implementation" value="{{ settings.max_budget_implementation }}" min="0" step="0.01"
+                           class="w-full px-3 py-2 rounded-lg text-[0.84rem] bg-[#faf9f6] border border-[#eae6df] text-[#3b3530]">
+                </div>
+                <div>
+                    <label class="block text-[0.78rem] font-medium text-[#544d43] mb-1">Validation</label>
+                    <input type="number" name="max_budget_validation" value="{{ settings.max_budget_validation }}" min="0" step="0.01"
+                           class="w-full px-3 py-2 rounded-lg text-[0.84rem] bg-[#faf9f6] border border-[#eae6df] text-[#3b3530]">
+                </div>
+                <div>
+                    <label class="block text-[0.78rem] font-medium text-[#544d43] mb-1">Release</label>
+                    <input type="number" name="max_budget_release" value="{{ settings.max_budget_release }}" min="0" step="0.01"
+                           class="w-full px-3 py-2 rounded-lg text-[0.84rem] bg-[#faf9f6] border border-[#eae6df] text-[#3b3530]">
+                </div>
+                <div>
+                    <label class="block text-[0.78rem] font-medium text-[#544d43] mb-1">Watcher</label>
+                    <input type="number" name="max_budget_watcher" value="{{ settings.max_budget_watcher }}" min="0" step="0.01"
+                           class="w-full px-3 py-2 rounded-lg text-[0.84rem] bg-[#faf9f6] border border-[#eae6df] text-[#3b3530]">
+                </div>
+            </div>
+        </div>
+
+        <!-- Model Tiers -->
+        <div class="card p-6 mb-4">
+            <h2 class="text-[0.92rem] font-medium text-[#3b3530] mb-1">Model Tiers</h2>
+            <p class="text-[0.75rem] text-[#b0a898] mb-4">Model identifiers for high and low tiers.</p>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-[0.78rem] font-medium text-[#544d43] mb-1">High tier</label>
+                    <input type="text" name="model_tier_high" value="{{ settings.model_tier_high }}"
+                           class="w-full px-3 py-2 rounded-lg text-[0.84rem] bg-[#faf9f6] border border-[#eae6df] text-[#3b3530] font-mono">
+                </div>
+                <div>
+                    <label class="block text-[0.78rem] font-medium text-[#544d43] mb-1">Low tier</label>
+                    <input type="text" name="model_tier_low" value="{{ settings.model_tier_low }}"
+                           class="w-full px-3 py-2 rounded-lg text-[0.84rem] bg-[#faf9f6] border border-[#eae6df] text-[#3b3530] font-mono">
+                </div>
+            </div>
+        </div>
+
+        <div class="flex justify-end">
+            <button type="submit" class="btn btn-primary">Save System Settings</button>
+        </div>
+    </form>
+</section>
 
 <!-- ── Global System Prompt ── -->
 <section class="mb-8">

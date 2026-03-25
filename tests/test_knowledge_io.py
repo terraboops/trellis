@@ -1,10 +1,10 @@
 """Tests for trellis/tools/knowledge_io.py — Knowledge Objects foundation."""
+
 from __future__ import annotations
 
 from pathlib import Path
 
 import pytest
-import yaml
 
 from trellis.tools.knowledge_io import (
     delete_object,
@@ -108,10 +108,13 @@ def test_delete_object(knowledge_dir: Path):
 
 def test_format_for_prompt_respects_limit(knowledge_dir: Path):
     for i in range(5):
-        save_object(knowledge_dir, _make_obj(
-            predicates=[[f"s{i}", "r", "o"]],
-            confidence=0.5 + i * 0.1,
-        ))
+        save_object(
+            knowledge_dir,
+            _make_obj(
+                predicates=[[f"s{i}", "r", "o"]],
+                confidence=0.5 + i * 0.1,
+            ),
+        )
 
     objects = load_objects(knowledge_dir)
     formatted = format_for_prompt(objects, max_entries=3)
@@ -127,8 +130,7 @@ def test_format_for_prompt_sorted_by_confidence(knowledge_dir: Path):
     formatted = format_for_prompt(objects)
 
     # The high-confidence entry should appear first
-    high_pos = formatted.find("conf")
-    assert "0.9" in formatted[:formatted.find("---")]
+    assert "0.9" in formatted[: formatted.find("---")]
 
 
 # ── search_by_predicates ──────────────────────────────────────────────────

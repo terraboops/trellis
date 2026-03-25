@@ -391,8 +391,20 @@
 </div>
 {% endif %}
 
-<!-- Feedback entries -->
-{% if feedback_entries %}
+<!-- Feedback section -->
+{% if not feedback_entries %}
+<div class="mb-8">
+    <div class="flex items-center justify-between mb-3">
+        <h3 class="text-[0.78rem] font-medium text-[#8a8074] uppercase tracking-wider">Feedback</h3>
+        <button type="button" onclick="feedbackState.artifact=''; feedbackState.selectedText=''; openFeedbackModal();"
+                class="text-[0.75rem] text-[#6a7a6a] hover:text-[#3b3530] cursor-pointer font-medium">+ Give Feedback</button>
+    </div>
+    <div class="card p-5 text-center">
+        <p class="text-[0.84rem] text-[#8a8074] mb-2">No feedback yet.</p>
+        <p class="text-[0.75rem] text-[#b0a898] mb-3">Select any text in an artifact to give targeted feedback, or use the button above for general feedback. Agents will incorporate your feedback in their next run.</p>
+    </div>
+</div>
+{% else %}
 {# Split feedback by source: human vs agent #}
 {% set ns = namespace(human_pending=[], human_serviced=[], agent_pending=[], agent_serviced=[]) %}
 {% for fb in feedback_entries %}
@@ -449,7 +461,11 @@
 {% endmacro %}
 
 <div class="mb-8">
-    <h3 class="text-[0.78rem] font-medium text-[#8a8074] uppercase tracking-wider mb-3">Feedback</h3>
+    <div class="flex items-center justify-between mb-3">
+        <h3 class="text-[0.78rem] font-medium text-[#8a8074] uppercase tracking-wider">Feedback</h3>
+        <button type="button" onclick="feedbackState.artifact=''; feedbackState.selectedText=''; openFeedbackModal();"
+                class="text-[0.75rem] text-[#6a7a6a] hover:text-[#3b3530] cursor-pointer font-medium">+ Give Feedback</button>
+    </div>
     <div id="feedback-list">
         {# Human feedback — always visible #}
         {% for fb in ns.human_pending | reverse %}
@@ -507,7 +523,7 @@
             <span class="text-[0.62rem] text-[#c5bfb4] font-normal font-mono tracking-wide">{{ filename }}</span>
             <button type="button"
                     onclick="event.stopPropagation(); feedbackState.artifact='{{ filename }}'; feedbackState.selectedText=''; openFeedbackModal();"
-                    class="ml-auto text-[0.68rem] text-[#b0a898] hover:text-[#544d43] opacity-0 group-hover/art:opacity-100 transition-opacity cursor-pointer">
+                    class="ml-auto text-[0.68rem] text-[#b0a898] hover:text-[#544d43] cursor-pointer">
                 feedback
             </button>
         </summary>
@@ -539,6 +555,20 @@
             <blockquote class="border-l-2 border-[#ddd6ca] pl-3 text-[0.82rem] text-[#8a8074] italic leading-relaxed" id="feedback-quote-text"></blockquote>
         </div>
         <div id="feedback-artifact-label" class="text-[0.7rem] font-mono text-[#b0a898] mb-2"></div>
+        {% if serviced_agents %}
+        <div class="mb-3">
+            <div class="text-[0.68rem] text-[#8a8074] mb-1.5">Agents that will process this feedback:</div>
+            <div class="flex flex-wrap gap-1.5">
+                {% for agent in serviced_agents %}
+                <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[0.62rem] font-medium bg-[#f0ebe4] text-[#7c6f64]">
+                    {{ agent_icon(agent, 10) }} {{ agent | role_label }}
+                </span>
+                {% endfor %}
+            </div>
+        </div>
+        {% else %}
+        <div class="text-[0.68rem] text-[#b0a898] mb-2">Feedback will be queued for the first agent.</div>
+        {% endif %}
         <textarea id="feedback-comment" rows="3" placeholder="What's your feedback on this?"
                   class="w-full px-3.5 py-2.5 rounded-xl text-[0.85rem] bg-white border border-[#eae6df] text-[#3b3530] resize-y mb-4"></textarea>
         <div class="flex gap-2 justify-end">
@@ -685,11 +715,53 @@
         try {
             const resp = await fetch(`/api/ideas/${ideaId}/feedback`, { method: 'POST', body: form });
             if (resp.ok) {
-                window.location.reload();
+                const data = await resp.json().catch(() => ({}));
+                closeFeedbackModal();
+                showToast('Feedback submitted. Agents will process it on their next run.');
+                // Dynamically append feedback chip using safe DOM methods
+                const list = document.getElementById('feedback-list');
+                if (list && data.entry) {
+                    const chip = document.createElement('div');
+                    chip.className = 'feedback-chip';
+
+                    const header = document.createElement('div');
+                    header.className = 'flex items-center gap-2 mb-1';
+                    const author = document.createElement('span');
+                    author.className = 'inline-flex items-center gap-1 text-[0.62rem] font-mono text-[#6a7a6a]';
+                    author.textContent = 'you';
+                    header.appendChild(author);
+                    if (data.entry.artifact) {
+                        const artSpan = document.createElement('span');
+                        artSpan.className = 'text-[0.68rem] font-mono text-[#8a8074] bg-[#eae6df] px-1.5 py-0.5 rounded';
+                        artSpan.textContent = data.entry.artifact;
+                        header.appendChild(artSpan);
+                    }
+                    const dateSpan = document.createElement('span');
+                    dateSpan.className = 'text-[0.65rem] text-[#b0a898] font-mono';
+                    dateSpan.textContent = (data.entry.created_at || '').substring(0, 10);
+                    header.appendChild(dateSpan);
+                    chip.appendChild(header);
+
+                    if (data.entry.selected_text) {
+                        const bq = document.createElement('blockquote');
+                        const text = data.entry.selected_text;
+                        bq.textContent = text.substring(0, 200) + (text.length > 200 ? '...' : '');
+                        chip.appendChild(bq);
+                    }
+
+                    const commentP = document.createElement('p');
+                    commentP.className = 'text-[#544d43]';
+                    commentP.textContent = data.entry.comment;
+                    chip.appendChild(commentP);
+
+                    list.prepend(chip);
+                }
+                btn.textContent = 'Submit';
+                btn.disabled = false;
                 return;
             }
-            const data = await resp.json().catch(() => ({}));
-            showToast(data.error || 'Failed to submit feedback', 'error');
+            const errData = await resp.json().catch(() => ({}));
+            showToast(errData.error || 'Failed to submit feedback', 'error');
         } catch(e) {
             showToast('Network error — could not submit feedback', 'error');
         }

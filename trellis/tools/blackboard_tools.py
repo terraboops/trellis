@@ -61,12 +61,14 @@ def create_blackboard_mcp_server(blackboard: Blackboard, idea_id: str, agent_rol
         if filename.endswith(".md") or filename == "status.json":
             html_name = filename.rsplit(".", 1)[0] + ".html"
             return {
-                "content": [{
-                    "type": "text",
-                    "text": ARTIFACT_REJECTION_MSG.format(
-                        filename=filename, html_name=html_name
-                    ),
-                }],
+                "content": [
+                    {
+                        "type": "text",
+                        "text": ARTIFACT_REJECTION_MSG.format(
+                            filename=filename, html_name=html_name
+                        ),
+                    }
+                ],
                 "isError": True,
             }
 
@@ -84,12 +86,14 @@ def create_blackboard_mcp_server(blackboard: Blackboard, idea_id: str, agent_rol
         if filename.endswith(".md") or filename == "status.json":
             html_name = filename.rsplit(".", 1)[0] + ".html"
             return {
-                "content": [{
-                    "type": "text",
-                    "text": ARTIFACT_REJECTION_MSG.format(
-                        filename=filename, html_name=html_name
-                    ),
-                }],
+                "content": [
+                    {
+                        "type": "text",
+                        "text": ARTIFACT_REJECTION_MSG.format(
+                            filename=filename, html_name=html_name
+                        ),
+                    }
+                ],
                 "isError": True,
             }
 
@@ -119,9 +123,7 @@ def create_blackboard_mcp_server(blackboard: Blackboard, idea_id: str, agent_rol
             phase_reasoning=args.get("reasoning", ""),
         )
         return {
-            "content": [
-                {"type": "text", "text": f"Recommendation set: {args['recommendation']}"}
-            ]
+            "content": [{"type": "text", "text": f"Recommendation set: {args['recommendation']}"}]
         }
 
     @tool(
@@ -190,11 +192,14 @@ def create_blackboard_mcp_server(blackboard: Blackboard, idea_id: str, agent_rol
         blackboard.write_file(idea_id, manifest_file, _json.dumps(existing, indent=2))
 
         summary = "\n".join(
-            f"  - {a['file']}: {a['purpose']}" + (f" (confidence: {a['confidence']})" if a.get('confidence', 1.0) < 1.0 else "")
+            f"  - {a['file']}: {a['purpose']}"
+            + (f" (confidence: {a['confidence']})" if a.get("confidence", 1.0) < 1.0 else "")
             for a in manifest
         )
         return {
-            "content": [{"type": "text", "text": f"Declared {len(manifest)} artifact(s):\n{summary}"}]
+            "content": [
+                {"type": "text", "text": f"Declared {len(manifest)} artifact(s):\n{summary}"}
+            ]
         }
 
     @tool(
@@ -270,7 +275,12 @@ def create_blackboard_mcp_server(blackboard: Blackboard, idea_id: str, agent_rol
         blackboard.write_file(idea_id, "feedback.json", _json.dumps(entries, indent=2))
 
         return {
-            "content": [{"type": "text", "text": f"Feedback registered: [{severity}] {artifact} — {comment[:80]}"}]
+            "content": [
+                {
+                    "type": "text",
+                    "text": f"Feedback registered: [{severity}] {artifact} — {comment[:80]}",
+                }
+            ]
         }
 
     @tool(
@@ -301,7 +311,9 @@ def create_blackboard_mcp_server(blackboard: Blackboard, idea_id: str, agent_rol
                 "isError": True,
             }
         return {
-            "content": [{"type": "text", "text": f"Acknowledged feedback '{feedback_id}': {action_taken}"}]
+            "content": [
+                {"type": "text", "text": f"Acknowledged feedback '{feedback_id}': {action_taken}"}
+            ]
         }
 
     return create_sdk_mcp_server(
@@ -320,7 +332,9 @@ def create_blackboard_mcp_server(blackboard: Blackboard, idea_id: str, agent_rol
     )
 
 
-def _find_artifact_owners(blackboard: Blackboard, idea_id: str, artifact_filename: str) -> list[str]:
+def _find_artifact_owners(
+    blackboard: Blackboard, idea_id: str, artifact_filename: str
+) -> list[str]:
     """Look up which agent roles own a given artifact from artifact-manifest.json."""
     import json as _json
 
@@ -469,7 +483,12 @@ def create_watcher_mcp_server(blackboard: Blackboard, idea_id: str, agent_role: 
         blackboard.write_file(idea_id, "feedback.json", _json.dumps(entries, indent=2))
 
         return {
-            "content": [{"type": "text", "text": f"Feedback registered: [{severity}] {artifact} — {comment[:80]}"}]
+            "content": [
+                {
+                    "type": "text",
+                    "text": f"Feedback registered: [{severity}] {artifact} — {comment[:80]}",
+                }
+            ]
         }
 
     return create_sdk_mcp_server(

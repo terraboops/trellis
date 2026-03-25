@@ -10,7 +10,7 @@ import asyncio
 import enum
 import logging
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from trellis.core.agent_factory import AgentFactory
@@ -85,7 +85,9 @@ class Worker:
         # Lock keyed by role:idea_id so different agents can run on the same idea
         lock_id = f"{role}:{idea_id}"
         if not self.lock_manager.acquire("pool", lock_id, executor=f"worker-{self.worker_id}"):
-            logger.warning("Worker %d: lock unavailable for %s on %s", self.worker_id, role, idea_id)
+            logger.warning(
+                "Worker %d: lock unavailable for %s on %s", self.worker_id, role, idea_id
+            )
             return None
 
         self.current_role = role
@@ -97,11 +99,16 @@ class Worker:
             timeout_minutes = max(1, int(timeout_seconds / 60))
             max_turns = self._calculate_max_turns(timeout_minutes)
             from datetime import timedelta
+
             deadline = datetime.now(timezone.utc) + timedelta(seconds=timeout_seconds)
 
             logger.info(
                 "Worker %d: starting %s on %s (max_turns=%d, timeout=%dm)",
-                self.worker_id, role, idea_id, max_turns, timeout_minutes,
+                self.worker_id,
+                role,
+                idea_id,
+                max_turns,
+                timeout_minutes,
             )
 
             agent = self.factory.create_agent(role)
@@ -123,7 +130,10 @@ class Worker:
                 elapsed = time.monotonic() - start_time
                 logger.warning(
                     "Worker %d: %s on %s hit timeout after %.0fs",
-                    self.worker_id, role, idea_id, elapsed,
+                    self.worker_id,
+                    role,
+                    idea_id,
+                    elapsed,
                 )
                 return RunResult(
                     status=RunStatus.DEADLINE,

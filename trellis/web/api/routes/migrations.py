@@ -3,12 +3,10 @@
 from __future__ import annotations
 
 from fastapi import APIRouter
-from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from trellis.config import get_settings
 from trellis.core.migrations import (
-    MigrationResult,
     check_all,
     load_registry_data,
     run_migrations,
@@ -68,11 +66,13 @@ async def migrations_apply(req: ApplyRequest):
     )
 
     for r in migration_results:
-        results.append({
-            "success": r.success,
-            "message": r.message,
-            "agents_modified": r.agents_modified,
-            "errors": r.errors,
-        })
+        results.append(
+            {
+                "success": r.success,
+                "message": r.message,
+                "agents_modified": r.agents_modified,
+                "errors": r.errors,
+            }
+        )
 
     return {"results": results, "applied": len([r for r in migration_results if r.success])}

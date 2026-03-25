@@ -113,6 +113,7 @@ class Blackboard:
     def delete_idea(self, idea_id: str) -> None:
         """Permanently delete an idea and all its artifacts."""
         import shutil
+
         idea_path = self.base_dir / idea_id
         if idea_path.exists() and idea_path.is_dir() and idea_id != "_template":
             shutil.rmtree(idea_path)
@@ -214,9 +215,9 @@ class Blackboard:
         """Return feedback entries where role is pending but hasn't acknowledged."""
         entries = self._load_feedback(idea_id)
         return [
-            e for e in entries
-            if role in e.get("pending_agents", [])
-            and role not in e.get("acknowledged_by", [])
+            e
+            for e in entries
+            if role in e.get("pending_agents", []) and role not in e.get("acknowledged_by", [])
         ]
 
     def has_pending_feedback(self, idea_id: str, role: str) -> bool:

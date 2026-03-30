@@ -71,10 +71,59 @@ async def restart_pool(app: FastAPI) -> None:
 
     settings = get_settings()
     new_manager = PoolManager(settings)
-    new_task = asyncio.create_task(new_manager.run())
+    new_task = asyncio.create_task(
+        _resilient_pool(app, new_manager, settings),
+        name="pool-supervisor",
+    )
     app.state.pool_manager = new_manager
     app.state.pool_task = new_task
     logger.info("Worker pool restarted with pool_size=%d", settings.pool_size)
+
+
+async def _resilient_pool(app: "FastAPI", pool_manager, settings) -> None:
+    """Run the pool with automatic restart on unexpected crashes.
+
+    Tracks restart frequency to avoid infinite restart loops — if the pool
+    crashes more than MAX_RAPID_RESTARTS times within RAPID_RESTART_WINDOW,
+    we stop retrying and log an error.
+    """
+    from trellis.orchestrator.pool import (
+        PoolManager,
+        POOL_RESTART_DELAY_SECONDS,
+        MAX_RAPID_RESTARTS,
+        RAPID_RESTART_WINDOW_SECONDS,
+    )
+    import time
+
+    restart_times: list[float] = []
+
+    while True:
+        try:
+            await pool_manager.run()
+            # Clean exit (e.g., stop() was called) — don't restart
+            logger.info("Pool exited cleanly")
+            return
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Pool crashed unexpectedly — will attempt restart")
+
+            now = time.monotonic()
+            restart_times = [t for t in restart_times if now - t < RAPID_RESTART_WINDOW_SECONDS]
+            restart_times.append(now)
+
+            if len(restart_times) >= MAX_RAPID_RESTARTS:
+                logger.error(
+                    "Pool crashed %d times in %ds — giving up. Check logs and restart the server.",
+                    MAX_RAPID_RESTARTS,
+                    RAPID_RESTART_WINDOW_SECONDS,
+                )
+                return
+
+            await asyncio.sleep(POOL_RESTART_DELAY_SECONDS)
+            pool_manager = PoolManager(settings)
+            app.state.pool_manager = pool_manager
+            logger.info("Restarting pool (attempt %d)", len(restart_times))
 
 
 def create_app() -> FastAPI:
@@ -87,7 +136,10 @@ def create_app() -> FastAPI:
 
             settings = get_settings()
             pool_manager = PoolManager(settings)
-            pool_task = asyncio.create_task(pool_manager.run())
+            pool_task = asyncio.create_task(
+                _resilient_pool(app, pool_manager, settings),
+                name="pool-supervisor",
+            )
             app.state.pool_manager = pool_manager
             app.state.pool_task = pool_task
             logger.info("Worker pool started")

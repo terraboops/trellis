@@ -32,7 +32,7 @@ class AgentConfig:
     # Sandbox settings (nono kernel-level isolation)
     sandbox_enabled: bool = False  # Enable nono sandbox
     sandbox_ssh: bool = False  # Pass SSH_AUTH_SOCK through
-    sandbox_proxy_credentials: list[str] = field(default_factory=lambda: ["anthropic"])
+    sandbox_proxy_credentials: list[str] = field(default_factory=list)
     sandbox_allowed_hosts: list[str] = field(default_factory=list)  # Network allowlist
     sandbox_allowed_ports: list[int] = field(default_factory=list)  # Local port binding
     sandbox_allowed_commands: list[str] = field(default_factory=list)  # Override cmd blocks

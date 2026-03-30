@@ -71,7 +71,11 @@ def build_nono_flags(
     for cmd in config.sandbox_allowed_commands:
         flags.append(f"--allow-command {cmd}")
 
-    # Proxy credentials (requires signed trust policy — skip if not configured)
+    # Proxy credentials — injects API keys via nono's reverse proxy.
+    # NOTE: This does NOT work for Claude Code OAuth auth (returns 400).
+    # Claude Code OAuth relies on env forwarding (CLAUDE_CONFIG_DIR, CLAUDE_*)
+    # and keychain read access (provided by the claude-code nono profile).
+    # Only use proxy-credential for non-OAuth services (e.g., future API keys).
     for cred in config.sandbox_proxy_credentials:
         flags.append(f"--proxy-credential {cred}")
 

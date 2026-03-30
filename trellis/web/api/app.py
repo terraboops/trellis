@@ -8,13 +8,17 @@ import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-# Load .env into os.environ so CLAUDE_CONFIG_DIR (and other non-pydantic vars)
-# are available to agent auth code
+# Load .env into os.environ — the project .env is authoritative for
+# server-scoped config. override=True is required because when running
+# inside a nono sandbox, the parent process has its own CLAUDE_CONFIG_DIR
+# pointing at the operator's personal config. The project .env specifies
+# the correct auth account (e.g., autonav). Without override, agents
+# copy OAuth tokens from the wrong account, causing 401 errors.
 from dotenv import load_dotenv
 from trellis.config import find_project_root
 
 try:
-    load_dotenv(find_project_root() / ".env", override=False)
+    load_dotenv(find_project_root() / ".env", override=True)
 except FileNotFoundError:
     pass
 

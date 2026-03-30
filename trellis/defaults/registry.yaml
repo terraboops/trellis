@@ -14,7 +14,7 @@ agents:
     claude_home: agents/ideation/.claude
     sandbox_enabled: false
     sandbox_ssh: false
-    sandbox_proxy_credentials: [anthropic]
+    sandbox_proxy_credentials: []
     sandbox_allowed_hosts: []
     sandbox_allowed_commands: []
 
@@ -34,7 +34,7 @@ agents:
     sandbox_enabled: false
     sandbox_ssh: true
     sandbox_rollback: true
-    sandbox_proxy_credentials: [anthropic, github]
+    sandbox_proxy_credentials: []
     sandbox_allowed_hosts: [github.com, api.github.com]
     sandbox_allowed_commands: []
 
@@ -53,7 +53,7 @@ agents:
     claude_home: agents/validation/.claude
     sandbox_enabled: false
     sandbox_ssh: false
-    sandbox_proxy_credentials: [anthropic]
+    sandbox_proxy_credentials: []
     sandbox_allowed_hosts: []
 
   - name: release
@@ -72,7 +72,7 @@ agents:
     sandbox_enabled: false
     sandbox_ssh: true
     sandbox_rollback: true
-    sandbox_proxy_credentials: [anthropic, github]
+    sandbox_proxy_credentials: []
     sandbox_allowed_hosts: [github.com, api.github.com, pypi.org]
     sandbox_allowed_commands: []
 
@@ -91,7 +91,7 @@ agents:
     claude_home: agents/artifact-check/.claude
     sandbox_enabled: false
     sandbox_ssh: false
-    sandbox_proxy_credentials: [anthropic]
+    sandbox_proxy_credentials: []
     sandbox_allowed_hosts: []
 
   - name: competitive-watcher
@@ -105,7 +105,7 @@ agents:
     permission_mode: bypassPermissions
     sandbox_enabled: false
     sandbox_ssh: false
-    sandbox_proxy_credentials: [anthropic]
+    sandbox_proxy_credentials: []
     sandbox_allowed_hosts: []
 
   - name: research-watcher
@@ -119,7 +119,7 @@ agents:
     permission_mode: bypassPermissions
     sandbox_enabled: false
     sandbox_ssh: false
-    sandbox_proxy_credentials: [anthropic]
+    sandbox_proxy_credentials: []
     sandbox_allowed_hosts: []
 
   - name: prioritizer
@@ -132,5 +132,5 @@ agents:
     permission_mode: bypassPermissions
     sandbox_enabled: false
     sandbox_ssh: false
-    sandbox_proxy_credentials: [anthropic]
+    sandbox_proxy_credentials: []
     sandbox_allowed_hosts: []

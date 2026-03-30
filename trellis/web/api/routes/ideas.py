@@ -150,6 +150,7 @@ async def home(request: Request):
                 }
             )
         status["_auxiliary"] = aux_status
+        status["_pipeline_agents"] = pipeline.get("agents", [])
         ideas.append(status)
     ideas.sort(key=lambda x: x.get("priority_score", 0), reverse=True)
     return templates.TemplateResponse("home.html", {"request": request, "ideas": ideas})

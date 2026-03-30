@@ -234,14 +234,14 @@
     <summary class="flex items-center gap-2.5 px-4 py-3 rounded-xl bg-[#f7f5f0] border border-[#eae6df] cursor-pointer select-none hover:border-[#ddd6ca] transition-colors" style="list-style: none;">
         <span class="chevron">&#x25B6;</span>
         <span class="text-[0.8rem] font-medium text-[#544d43]">Pipeline</span>
-        <span class="text-[0.72rem] text-[#b0a898]">{{ pipeline.get('stages', []) | length }} stages</span>
+        <span class="text-[0.72rem] text-[#b0a898]">{{ pipeline.get('agents', []) | length }} stages</span>
         {% if pipeline.get('preset') %}
         <span class="text-[0.65rem] font-mono text-[#8a8074] bg-[#f2efe8] px-1.5 py-0.5 rounded">{{ pipeline.preset }}</span>
         {% endif %}
     </summary>
     <div class="mt-2 rounded-xl bg-white border border-[#eae6df] p-5">
         <form method="post" action="/ideas/{{ idea_id }}/pipeline" id="pipeline-form">
-            <input type="hidden" name="stages" id="pipeline-stages-input" value="{{ pipeline.get('stages', []) | join(',') }}">
+            <input type="hidden" name="stages" id="pipeline-stages-input" value="{{ pipeline.get('agents', []) | join(',') }}">
             <input type="hidden" name="post_ready" id="pipeline-post-ready-input" value="{{ pipeline.get('post_ready', []) | join(',') }}">
             <input type="hidden" name="gating_overrides" id="pipeline-gating-overrides" value="{{ pipeline.get('gating', {}).get('overrides', {}) | tojson }}">
 
@@ -260,7 +260,7 @@
                     </div>
                 </div>
                 <div id="stage-list" class="space-y-1.5">
-                    {% for stage in pipeline.get('stages', []) %}
+                    {% for stage in pipeline.get('agents', []) %}
                     <div class="stage-item flex items-center gap-2 px-3 py-2 rounded-lg bg-[#f7f5f0] border border-[#eae6df] group" draggable="true" data-stage="{{ stage }}">
                         <span class="cursor-grab text-[#b0a898] hover:text-[#8a8074] select-none" title="Drag to reorder">&#x2261;</span>
                         <span class="inline-block px-1.5 py-0.5 rounded text-[0.68rem] font-medium

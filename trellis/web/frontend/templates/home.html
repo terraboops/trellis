@@ -34,7 +34,7 @@
             <span>Awaiting human review{% if idea.get('review_reason') %}: {{ idea.review_reason[:80] }}{% endif %}</span>
         </div>
         {% endif %}
-        {% set stages = ['ideation', 'implementation', 'validation', 'release'] %}
+        {% set stages = idea.get('_pipeline_agents', ['ideation', 'implementation', 'validation', 'release']) %}
         {% set phase = idea.phase.replace('_review', '') %}
         {% set phase_idx = stages.index(phase) if phase in stages else -1 %}
         {% set completed_idx = phase_idx - 1 if phase_idx > 0 else -1 %}

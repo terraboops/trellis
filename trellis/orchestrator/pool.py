@@ -33,6 +33,9 @@ logger = logging.getLogger(__name__)
 SNAPSHOT_INTERVAL_SECONDS = 10
 MAX_ITERATE_PER_STAGE = 3
 POOL_LOCK_FILE = ".pool.lock"
+POOL_RESTART_DELAY_SECONDS = 5
+MAX_RAPID_RESTARTS = 5
+RAPID_RESTART_WINDOW_SECONDS = 60
 
 
 def can_schedule(
@@ -735,7 +738,15 @@ class PoolManager:
                 try:
                     result = task.result()
                     if isinstance(result, RunResult):
-                        await self._handle_result(result, queue)
+                        try:
+                            await self._handle_result(result, queue)
+                        except OSError as e:
+                            logger.error(
+                                "I/O error handling result for %s on %s (non-fatal): %s",
+                                result.role,
+                                result.idea_id,
+                                e,
+                            )
                         queue.mark_done(result.role, result.idea_id)
                         # Reset cadence on ANY completion (TLA+ verified)
                         if result.role in cadence_trackers:
@@ -774,7 +785,10 @@ class PoolManager:
             else:
                 await asyncio.sleep(self.settings.producer_interval_seconds)
 
-            self._snapshot(queue, cadence_trackers)
+            try:
+                self._snapshot(queue, cadence_trackers)
+            except OSError as e:
+                logger.error("Snapshot failed (non-fatal): %s", e)
 
     async def _run_worker(self, worker: Worker, job: Job) -> RunResult | None:
         """Run a single worker assignment."""

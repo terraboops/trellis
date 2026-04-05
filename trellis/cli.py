@@ -306,8 +306,30 @@ def migrate_knowledge(
 
 
 @app.command()
-def run() -> None:
+def run(
+    human_readable: str = typer.Option(
+        None,
+        "--human-readable",
+        help=(
+            "LLM-narrated log output. Optionally specify a format name "
+            "(default: explanatory). Use --list-log-formats to see all formats."
+        ),
+        is_flag=False,
+        flag_value="explanatory",
+    ),
+    list_log_formats: bool = typer.Option(
+        False, "--list-log-formats", help="List available human-readable log formats and exit."
+    ),
+) -> None:
     """Start the worker pool (no web UI)."""
+    if list_log_formats:
+        _print_log_formats()
+        return
+
+    from trellis.log_setup import configure_logging
+
+    configure_logging(human_readable=human_readable)
+
     settings = get_settings()
 
     async def _run():
@@ -384,6 +406,19 @@ def _stop_daemon(settings):
     console.print("[green]Killed.[/green]")
 
 
+def _print_log_formats() -> None:
+    from trellis.human_log import list_formats
+
+    fmts = list_formats()
+    table = Table(title="Human-readable log formats")
+    table.add_column("Name", style="cyan")
+    table.add_column("Description")
+    for name, desc in sorted(fmts.items()):
+        table.add_row(name, desc)
+    console.print(table)
+    console.print("\n[dim]Add custom formats as log-formats/<name>.md in your project root.[/dim]")
+
+
 @app.command()
 def serve(
     host: str = typer.Option(None, help="Host to bind to"),
@@ -391,8 +426,25 @@ def serve(
     no_pool: bool = typer.Option(False, "--no-pool", help="Disable worker pool"),
     background: bool = typer.Option(False, "--background", help="Run as background daemon"),
     stop: bool = typer.Option(False, "--stop", help="Stop background daemon"),
+    human_readable: str = typer.Option(
+        None,
+        "--human-readable",
+        help=(
+            "LLM-narrated log output. Optionally specify a format name "
+            "(default: explanatory). Use --list-log-formats to see all formats."
+        ),
+        is_flag=False,
+        flag_value="explanatory",
+    ),
+    list_log_formats: bool = typer.Option(
+        False, "--list-log-formats", help="List available human-readable log formats and exit."
+    ),
 ) -> None:
     """Start the web dashboard (and worker pool by default)."""
+    if list_log_formats:
+        _print_log_formats()
+        return
+
     settings = get_settings()
 
     if stop:
@@ -402,6 +454,10 @@ def serve(
     if background:
         _start_daemon(settings, host, port, no_pool)
         return
+
+    from trellis.log_setup import configure_logging
+
+    configure_logging(human_readable=human_readable)
 
     import uvicorn
 
@@ -414,6 +470,7 @@ def serve(
         create_app(),
         host=host or settings.web_host,
         port=port or settings.web_port,
+        log_config=None,  # suppress uvicorn's own logging config
     )
 
 

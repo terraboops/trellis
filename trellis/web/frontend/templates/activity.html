@@ -14,21 +14,51 @@
     {% if running %}
     <div class="space-y-3">
         {% for entry in running %}
-        <div class="card p-5 flex items-center gap-4">
-            <div class="agent-ring running">
-                <span class="text-[#7b5ea8]">{{ agent_icon(entry.agent, 18) }}</span>
-            </div>
-            <div class="flex-1 min-w-0">
-                <div class="flex items-center gap-2 mb-0.5">
-                    <span class="text-[0.85rem] font-medium text-[#3b3530]">{{ entry.agent }}</span>
-                    <span class="text-[0.7rem] text-[#b0a898]">on</span>
-                    <a href="/ideas/{{ entry.idea_id }}" class="text-[0.82rem] text-[#5e94bb] hover:underline truncate">
-                        {{ entry.idea_title }}
-                    </a>
+        <div class="card p-5 cursor-pointer hover:border-[#d4cdc4] transition-colors"
+             onclick="toggleLive('{{ entry.agent }}', '{{ entry.idea_id }}', this)">
+            <div class="flex items-center gap-4">
+                <div class="agent-ring running flex-shrink-0">
+                    <span class="text-[#7b5ea8]">{{ agent_icon(entry.agent, 18) }}</span>
                 </div>
-                <div class="flex items-center gap-4 text-[0.72rem] text-[#b0a898]">
-                    <span class="font-mono">{{ entry.model }}</span>
-                    <span data-started="{{ entry.started_at }}" class="duration-display"></span>
+                <div class="flex-1 min-w-0">
+                    <div class="flex items-center gap-2 mb-0.5">
+                        <span class="text-[0.85rem] font-medium text-[#3b3530]">{{ entry.agent }}</span>
+                        <span class="text-[0.7rem] text-[#b0a898]">on</span>
+                        <a href="/ideas/{{ entry.idea_id }}" class="text-[0.82rem] text-[#5e94bb] hover:underline truncate"
+                           onclick="event.stopPropagation()">
+                            {{ entry.idea_title }}
+                        </a>
+                    </div>
+                    <div class="flex items-center gap-4 text-[0.72rem] text-[#b0a898]">
+                        <span class="font-mono">{{ entry.model }}</span>
+                        <span data-started="{{ entry.started_at }}" class="duration-display"></span>
+                        <span class="text-[0.68rem] text-[#c4bdb0]">click to watch</span>
+                    </div>
+                </div>
+                <span class="live-chevron text-[#c4bdb0] text-[0.7rem] flex-shrink-0">▶</span>
+            </div>
+            <!-- Live transcript panel, hidden by default -->
+            <div class="live-panel hidden mt-4 border-t border-[#eae6df] pt-4">
+                <div class="flex items-center gap-2 mb-3">
+                    <span class="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                    <span class="text-[0.72rem] font-medium text-[#8a8074] uppercase tracking-wider">Live transcript</span>
+                    <span class="live-updated text-[0.65rem] text-[#c4bdb0] ml-auto"></span>
+                </div>
+                <!-- Sandbox failure banner -->
+                <div class="live-sandbox-banner hidden mb-3 rounded-lg bg-red-50 border border-red-200 px-3 py-2.5">
+                    <div class="flex items-center gap-2">
+                        <span class="text-red-500 font-bold text-[0.8rem]">⚠ Sandbox failure detected</span>
+                    </div>
+                    <div class="live-stderr-lines mt-2 space-y-1 font-mono text-[0.68rem] text-red-700 max-h-32 overflow-y-auto"></div>
+                </div>
+                <!-- Non-critical stderr (no sandbox failure) -->
+                <div class="live-stderr-minor hidden mb-3 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2">
+                    <div class="text-[0.68rem] font-medium text-amber-700 mb-1">Process output</div>
+                    <div class="live-stderr-minor-lines font-mono text-[0.67rem] text-amber-800 max-h-24 overflow-y-auto space-y-0.5"></div>
+                </div>
+                <div class="live-entries space-y-2 max-h-96 overflow-y-auto font-mono text-[0.72rem]"></div>
+                <div class="live-empty text-[0.78rem] text-[#b0a898] text-center py-6 hidden">
+                    Waiting for first message…
                 </div>
             </div>
         </div>
@@ -44,6 +74,143 @@
 </div>
 
 <script>
+var livePollers = {};
+
+function toggleLive(agent, ideaId, cardEl) {
+    var panel = cardEl.querySelector('.live-panel');
+    var chevron = cardEl.querySelector('.live-chevron');
+    var isOpen = !panel.classList.contains('hidden');
+
+    if (isOpen) {
+        panel.classList.add('hidden');
+        chevron.textContent = '▶';
+        var key = agent + '/' + ideaId;
+        if (livePollers[key]) {
+            clearInterval(livePollers[key]);
+            delete livePollers[key];
+        }
+    } else {
+        panel.classList.remove('hidden');
+        chevron.textContent = '▼';
+        fetchLive(agent, ideaId, panel);
+        livePollers[agent + '/' + ideaId] = setInterval(function() {
+            fetchLive(agent, ideaId, panel);
+        }, 2000);
+    }
+}
+
+function fetchLive(agent, ideaId, panel) {
+    fetch('/api/activity/live?agent=' + encodeURIComponent(agent) + '&idea_id=' + encodeURIComponent(ideaId))
+        .then(function(r) { return r.json(); })
+        .then(function(data) { renderLive(panel, data); })
+        .catch(function() {});
+}
+
+function makeEl(tag, classes, textContent) {
+    var el = document.createElement(tag);
+    if (classes) el.className = classes;
+    if (textContent !== undefined) el.textContent = textContent;
+    return el;
+}
+
+function renderLive(panel, data) {
+    var entriesEl = panel.querySelector('.live-entries');
+    var emptyEl = panel.querySelector('.live-empty');
+    var updatedEl = panel.querySelector('.live-updated');
+    var sandboxBanner = panel.querySelector('.live-sandbox-banner');
+    var stderrLines = panel.querySelector('.live-stderr-lines');
+    var stderrMinor = panel.querySelector('.live-stderr-minor');
+    var stderrMinorLines = panel.querySelector('.live-stderr-minor-lines');
+    var entries = data.entries || [];
+    var stderr = data.process_stderr || [];
+
+    if (data.last_updated) {
+        updatedEl.textContent = 'updated ' + new Date(data.last_updated).toLocaleTimeString();
+    }
+
+    // Render stderr / sandbox failure banner
+    if (stderr.length > 0) {
+        if (data.sandbox_failure) {
+            sandboxBanner.classList.remove('hidden');
+            stderrMinor.classList.add('hidden');
+            var prevCount = parseInt(stderrLines.getAttribute('data-count') || '0');
+            if (stderr.length !== prevCount) {
+                stderrLines.setAttribute('data-count', String(stderr.length));
+                stderrLines.textContent = '';
+                stderr.forEach(function(line) { stderrLines.appendChild(makeEl('div', null, line)); });
+                stderrLines.scrollTop = stderrLines.scrollHeight;
+            }
+        } else {
+            stderrMinor.classList.remove('hidden');
+            sandboxBanner.classList.add('hidden');
+            var prevMinorCount = parseInt(stderrMinorLines.getAttribute('data-count') || '0');
+            if (stderr.length !== prevMinorCount) {
+                stderrMinorLines.setAttribute('data-count', String(stderr.length));
+                stderrMinorLines.textContent = '';
+                stderr.forEach(function(line) { stderrMinorLines.appendChild(makeEl('div', null, line)); });
+                stderrMinorLines.scrollTop = stderrMinorLines.scrollHeight;
+            }
+        }
+    } else {
+        sandboxBanner.classList.add('hidden');
+        stderrMinor.classList.add('hidden');
+    }
+
+    if (entries.length === 0) {
+        entriesEl.classList.add('hidden');
+        if (stderr.length === 0) emptyEl.classList.remove('hidden');
+        return;
+    }
+    emptyEl.classList.add('hidden');
+    entriesEl.classList.remove('hidden');
+
+    var currentCount = parseInt(entriesEl.getAttribute('data-count') || '0');
+    if (entries.length === currentCount) return;
+    entriesEl.setAttribute('data-count', String(entries.length));
+
+    var wasAtBottom = entriesEl.scrollHeight - entriesEl.scrollTop <= entriesEl.clientHeight + 40;
+    entriesEl.textContent = '';  // clear
+
+    for (var i = 0; i < entries.length; i++) {
+        var e = entries[i];
+        if (e.role === 'assistant') {
+            var blocks = e.blocks || [];
+            for (var j = 0; j < blocks.length; j++) {
+                var b = blocks[j];
+                if (b.type === 'text' && b.text) {
+                    var preview = b.text.length > 300 ? b.text.slice(0, 300) + '…' : b.text;
+                    var row = makeEl('div', 'rounded-lg bg-[#f7f5f0] border border-[#eae6df] px-3 py-2 text-[#3b3530] whitespace-pre-wrap leading-relaxed', preview);
+                    entriesEl.appendChild(row);
+                } else if (b.type === 'tool_use') {
+                    var row = makeEl('div', 'rounded-lg bg-[#f0ebf8] border border-[#e0d8f0] px-3 py-2 text-[#7b5ea8]');
+                    var nameSpan = makeEl('span', 'font-semibold', b.name);
+                    row.appendChild(nameSpan);
+                    if (b.input) {
+                        try {
+                            var inp = typeof b.input === 'string' ? JSON.parse(b.input) : b.input;
+                            var detail = '';
+                            if (inp.filename) detail = ' → ' + inp.filename;
+                            else {
+                                var keys = Object.keys(inp);
+                                if (keys.length) detail = ' ' + String(inp[keys[0]]).slice(0, 60);
+                            }
+                            if (detail) row.appendChild(makeEl('span', 'text-[#a690cc]', detail));
+                        } catch(_) {}
+                    }
+                    entriesEl.appendChild(row);
+                } else if (b.type === 'thinking' && b.thinking) {
+                    var preview = b.thinking.length > 120 ? b.thinking.slice(0, 120) + '…' : b.thinking;
+                    entriesEl.appendChild(makeEl('div', 'rounded-lg bg-[#f5f3ee] border border-[#eae6df] px-3 py-2 text-[#b0a898] italic', preview));
+                }
+            }
+        } else if (e.role === 'result') {
+            entriesEl.appendChild(makeEl('div', 'rounded-lg bg-[#eef6ee] border border-[#d6e8d6] px-3 py-2 text-[#4a7c59] font-medium', 'Done — ' + (e.stop_reason || 'completed')));
+        }
+    }
+
+    if (wasAtBottom) entriesEl.scrollTop = entriesEl.scrollHeight;
+}
+
 function updateDurations() {
     document.querySelectorAll('.duration-display').forEach(function(el) {
         var started = el.getAttribute('data-started');

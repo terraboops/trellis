@@ -30,7 +30,11 @@ from fastapi.staticfiles import StaticFiles
 
 from trellis.config import get_settings
 
-logging.basicConfig(level=logging.INFO, format="%(levelname)s:%(name)s:%(message)s")
+# Logging is configured by the CLI (trellis/log_setup.py) before the app starts.
+# When the app module is imported directly (e.g. in tests), fall back to basicConfig
+# so there is always at least one handler.
+if not logging.getLogger().handlers:
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s:%(name)s:%(message)s")
 logger = logging.getLogger(__name__)
 
 WEB_DIR = Path(__file__).resolve().parent.parent
@@ -174,8 +178,10 @@ def create_app() -> FastAPI:
     from trellis.web.api.routes.settings import router as settings_router
     from trellis.web.api.routes.migrations import router as migrations_router
     from trellis.web.api.routes.pipelines import router as pipelines_router
+    from trellis.web.api.routes.health import router as health_router
     from trellis.web.api.websocket import router as ws_router
 
+    app.include_router(health_router, tags=["health"])
     app.include_router(activity_router, tags=["activity"])
     app.include_router(ideas_router)
     app.include_router(agents_router, prefix="/agents", tags=["agents"])

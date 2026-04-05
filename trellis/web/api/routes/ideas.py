@@ -197,7 +197,12 @@ async def create_idea(
 @router.get("/ideas/{idea_id}", response_class=HTMLResponse)
 async def idea_detail(request: Request, idea_id: str):
     bb = _get_blackboard()
-    status = bb.get_status(idea_id)
+    try:
+        status = bb.get_status(idea_id)
+    except FileNotFoundError:
+        from fastapi.responses import Response
+
+        return Response(status_code=404, content=f"Idea '{idea_id}' not found.")
 
     # Organize files by category — idea.md first, then the rest
     artifacts = {}

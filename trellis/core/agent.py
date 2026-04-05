@@ -276,6 +276,55 @@ class BaseAgent(ABC):
             "timestamp": ts,
         }
 
+    def _live_log_path(self, idea_id: str) -> Path:
+        """Path for the partial in-progress transcript (deleted on completion)."""
+        log_dir = self.blackboard.idea_dir(idea_id) / "agent-logs"
+        log_dir.mkdir(exist_ok=True)
+        return log_dir / f".live-{self.config.name}.json"
+
+    _SANDBOX_FAILURE_PATTERNS = (
+        "operation not permitted",
+        "eperm",
+        "nono:",
+        "permission denied",
+        "sandbox",
+    )
+
+    def _write_live_log(
+        self,
+        idea_id: str,
+        transcript: list[dict],
+        process_stderr: list[str] | None = None,
+        sandbox_failure: bool = False,
+    ) -> None:
+        """Overwrite the live log with the current partial transcript."""
+        try:
+            path = self._live_log_path(idea_id)
+            data = {
+                "agent": self.config.name,
+                "idea_id": idea_id,
+                "model": self.config.model,
+                "last_updated": datetime.now(timezone.utc).isoformat(),
+                "entries": transcript,
+                "process_stderr": process_stderr or [],
+                "sandbox_failure": sandbox_failure,
+            }
+            path.write_text(json.dumps(data, indent=2, default=str))
+        except Exception as e:
+            logger.warning(
+                "Live log write failed for agent '%s' on '%s': %s",
+                self.config.name,
+                idea_id,
+                e,
+            )
+
+    def _clear_live_log(self, idea_id: str) -> None:
+        """Delete the live log file when the agent finishes."""
+        try:
+            self._live_log_path(idea_id).unlink(missing_ok=True)
+        except Exception:
+            pass
+
     def _save_transcript(
         self, idea_id: str, transcript: list[dict], prompt: str, system_prompt: str
     ) -> None:
@@ -737,6 +786,20 @@ class BaseAgent(ABC):
 
         output_parts = []
         transcript = []
+        process_stderr: list[str] = []
+        sandbox_failure = False
+
+        def _on_stderr(line: str) -> None:
+            nonlocal sandbox_failure
+            process_stderr.append(line)
+            logger.warning("Agent '%s' stderr on '%s': %s", self.config.name, idea_id, line)
+            low = line.lower()
+            if any(pat in low for pat in self._SANDBOX_FAILURE_PATTERNS):
+                sandbox_failure = True
+            self._write_live_log(idea_id, transcript, process_stderr, sandbox_failure)
+
+        options.stderr = _on_stderr
+
         try:
             async with ClaudeSDKClient(options=options) as client:
                 await client.query(prompt)
@@ -744,6 +807,7 @@ class BaseAgent(ABC):
                     entry = self._message_to_dict(message)
                     if entry:
                         transcript.append(entry)
+                        self._write_live_log(idea_id, transcript, process_stderr, sandbox_failure)
 
                     if isinstance(message, ResultMessage):
                         output_parts.append(message.result or "")
@@ -756,6 +820,7 @@ class BaseAgent(ABC):
                             cost,
                         )
                         self._save_transcript(idea_id, transcript, prompt, system_prompt)
+                        self._clear_live_log(idea_id)
                         return AgentResult(
                             success=True,
                             output="\n".join(output_parts),
@@ -765,7 +830,9 @@ class BaseAgent(ABC):
         except Exception as e:
             logger.exception("Agent '%s' failed on '%s'", self.config.name, idea_id)
             self._save_transcript(idea_id, transcript, prompt, system_prompt)
+            self._clear_live_log(idea_id)
             return AgentResult(success=False, error=str(e), transcript=transcript)
 
         self._save_transcript(idea_id, transcript, prompt, system_prompt)
+        self._clear_live_log(idea_id)
         return AgentResult(success=True, output="\n".join(output_parts), transcript=transcript)
